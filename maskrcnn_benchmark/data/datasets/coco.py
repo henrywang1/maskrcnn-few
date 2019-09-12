@@ -43,6 +43,8 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         super(COCODataset, self).__init__(root, ann_file)
         # sort indices for reproducible results
         self.ids = sorted(self.ids)
+        
+        self.is_lvis = True if "lvis" in ann_file else False
 
         # filter images without detection annotations
         if remove_images_without_annotations:
@@ -70,7 +72,8 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
 
         # filter crowd annotations
         # TODO might be better to add an extra field
-        anno = [obj for obj in anno if obj["iscrowd"] == 0]
+        if not self.is_lvis: # coco
+            anno = [obj for obj in anno if obj["iscrowd"] == 0]
 
         boxes = [obj["bbox"] for obj in anno]
         boxes = torch.as_tensor(boxes).reshape(-1, 4)  # guard against no boxes
