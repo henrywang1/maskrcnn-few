@@ -1,11 +1,13 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
+import os
 import torch
 import torchvision
 
 from maskrcnn_benchmark.structures.bounding_box import BoxList
 from maskrcnn_benchmark.structures.segmentation_mask import SegmentationMask
 from maskrcnn_benchmark.structures.keypoint import PersonKeypoints
-
+from maskrcnn_benchmark.utils.comm import is_main_process,synchronize
+torch.multiprocessing.set_sharing_strategy('file_system')
 
 min_keypoints_per_image = 10
 
@@ -40,14 +42,33 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
     def __init__(
         self, ann_file, root, remove_images_without_annotations, transforms=None
     ):
+        self.is_lvis = True if "lvis" in ann_file else False
+        if self.is_lvis:
+            if "train" in ann_file:
+                pass
+                # print("Set sharing stratagy, file_system")
+                # torch.multiprocessing.set_sharing_strategy('file_system')
+            else:
+                ann_file_new = ann_file + "_fix"
+                if not os.path.isfile(ann_file_new) and is_main_process():
+                    with open(ann_file) as f_in:
+                        import json
+                        anns = json.load(f_in)
+
+                    if "_" in anns["images"][0]["file_name"]:
+                        replace_file_name = lambda x: (x["file_name"].split("_")[2])
+                        _ = [i.update({"file_name": replace_file_name(i)}) for i in anns["images"]]
+
+                    with open(ann_file_new, "w") as f_out:
+                        json.dump(anns, f_out)
+                ann_file = ann_file_new
+
+        synchronize()
+        print("Use annotation {}".format(ann_file))
         super(COCODataset, self).__init__(root, ann_file)
         # sort indices for reproducible results
         self.ids = sorted(self.ids)
-        
-        self.is_lvis = True if "lvis" in ann_file else False
-        if self.is_lvis and "train" in ann_file:
-            torch.multiprocessing.set_sharing_strategy('file_system')
-
+   
         # filter images without detection annotations
         if remove_images_without_annotations:
             ids = []
