@@ -45,6 +45,8 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         self.ids = sorted(self.ids)
         
         self.is_lvis = True if "lvis" in ann_file else False
+        if self.is_lvis and "train" in ann_file:
+            torch.multiprocessing.set_sharing_strategy('file_system')
 
         # filter images without detection annotations
         if remove_images_without_annotations:
