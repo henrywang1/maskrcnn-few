@@ -62,8 +62,10 @@ def train(cfg, local_rank, distributed):
     checkpointer = DetectronCheckpointer(
         cfg, model, optimizer, scheduler, output_dir, save_to_disk
     )
-    extra_checkpoint_data = checkpointer.load(cfg.MODEL.WEIGHT)
-    arguments.update(extra_checkpoint_data)
+    load_roi = cfg.SOLVER.CHECKPOINT_LOAD_ROI
+    extra_checkpoint_data = checkpointer.load(cfg.MODEL.WEIGHT, load_roi=load_roi)
+    if load_roi:
+        arguments.update(extra_checkpoint_data)
 
     data_loader = make_data_loader(
         cfg,

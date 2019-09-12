@@ -7,7 +7,7 @@ import torch
 from maskrcnn_benchmark.utils.imports import import_file
 
 
-def align_and_update_state_dicts(model_state_dict, loaded_state_dict):
+def align_and_update_state_dicts(model_state_dict, loaded_state_dict, load_roi=True):
     """
     Strategy: suppose that the models that we will create will have prefixes appended
     to each of its keys, for example due to an extra level of nesting that the original
@@ -24,6 +24,16 @@ def align_and_update_state_dicts(model_state_dict, loaded_state_dict):
     """
     current_keys = sorted(list(model_state_dict.keys()))
     loaded_keys = sorted(list(loaded_state_dict.keys()))
+    if not load_roi:
+        skip_keys = ["roi_heads.mask.predictor.mask_fcn_logits.weight",
+                     "roi_heads.box.predictor.cls_score.weight",
+                     "roi_heads.box.predictor.bbox_pred.weight",
+                     "roi_heads.mask.predictor.mask_fcn_logits.bias",
+                     "roi_heads.box.predictor.cls_score.bias",
+                     "roi_heads.box.predictor.bbox_pred.bias",
+                    ]
+
+        loaded_keys = [l for l in loaded_keys if not l in skip_keys]
     # get a matrix of string matches, where each (i, j) entry correspond to the size of the
     # loaded_key string, if it matches
     match_matrix = [
@@ -68,13 +78,13 @@ def strip_prefix_if_present(state_dict, prefix):
     return stripped_state_dict
 
 
-def load_state_dict(model, loaded_state_dict):
+def load_state_dict(model, loaded_state_dict, load_roi=True):
     model_state_dict = model.state_dict()
     # if the state_dict comes from a model that was wrapped in a
     # DataParallel or DistributedDataParallel during serialization,
     # remove the "module" prefix before performing the matching
     loaded_state_dict = strip_prefix_if_present(loaded_state_dict, prefix="module.")
-    align_and_update_state_dicts(model_state_dict, loaded_state_dict)
+    align_and_update_state_dicts(model_state_dict, loaded_state_dict, load_roi)
 
     # use strict loading
     model.load_state_dict(model_state_dict)
