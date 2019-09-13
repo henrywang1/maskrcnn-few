@@ -2,12 +2,13 @@
 import os
 import torch
 import torchvision
+import json
+import random
 
 from maskrcnn_benchmark.structures.bounding_box import BoxList
 from maskrcnn_benchmark.structures.segmentation_mask import SegmentationMask
 from maskrcnn_benchmark.structures.keypoint import PersonKeypoints
 from maskrcnn_benchmark.utils.comm import is_main_process,synchronize
-torch.multiprocessing.set_sharing_strategy('file_system')
 
 min_keypoints_per_image = 10
 
@@ -43,16 +44,17 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         self, ann_file, root, remove_images_without_annotations, transforms=None
     ):
         self.is_lvis = True if "lvis" in ann_file else False
+        self.is_train = False
         if self.is_lvis:
             if "train" in ann_file:
-                pass
-                # print("Set sharing stratagy, file_system")
-                # torch.multiprocessing.set_sharing_strategy('file_system')
+                torch.multiprocessing.set_sharing_strategy('file_system')
+                print("Set sharing stratagy, file_system")
+                self.is_train = True
+                self.cids = [*range(1,1231)]
             else:
                 ann_file_new = ann_file + "_fix"
                 if not os.path.isfile(ann_file_new) and is_main_process():
                     with open(ann_file) as f_in:
-                        import json
                         anns = json.load(f_in)
 
                     if "_" in anns["images"][0]["file_name"]:
@@ -62,7 +64,7 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
                     with open(ann_file_new, "w") as f_out:
                         json.dump(anns, f_out)
                 ann_file = ann_file_new
-
+        self.ann_file = ann_file
         synchronize()
         print("Use annotation {}".format(ann_file))
         super(COCODataset, self).__init__(root, ann_file)
@@ -79,6 +81,7 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
                     ids.append(img_id)
             self.ids = ids
 
+        self.img_to_id_map = {k: v for v, k in enumerate(self.ids)}
         self.categories = {cat['id']: cat['name'] for cat in self.coco.cats.values()}
 
         self.json_category_id_to_contiguous_id = {
@@ -97,6 +100,13 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         # TODO might be better to add an extra field
         if not self.is_lvis: # coco
             anno = [obj for obj in anno if obj["iscrowd"] == 0]
+
+        if self.is_train and random.random() > 0.5:
+            cls_label = random.sample(self.cids, 1)[0]
+            img_by_class = self.coco.getImgIds(catIds=[cls_label])
+            idx = random.sample(set(img_by_class), 1)[0]
+            idx = self.img_to_id_map[idx]
+            img, anno = super(COCODataset, self).__getitem__(idx)
 
         boxes = [obj["bbox"] for obj in anno]
         boxes = torch.as_tensor(boxes).reshape(-1, 4)  # guard against no boxes
