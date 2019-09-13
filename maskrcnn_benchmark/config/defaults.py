@@ -424,7 +424,7 @@ _C.TEST.EXPECTED_RESULTS_SIGMA_TOL = 4
 # see 2 images per batch
 _C.TEST.IMS_PER_BATCH = 8
 # Number of detections per image
-_C.TEST.DETECTIONS_PER_IMG = 100
+_C.TEST.DETECTIONS_PER_IMG = 300
 
 # ---------------------------------------------------------------------------- #
 # Test-time augmentations for bounding box detection

@@ -49,21 +49,25 @@ def do_coco_evaluation(
         logger.info('Preparing keypoints results')
         coco_results['keypoints'] = prepare_for_coco_keypoint(predictions, dataset)
 
-    results = COCOResults(*iou_types)
-    logger.info("Evaluating predictions")
-    for iou_type in iou_types:
-        with tempfile.NamedTemporaryFile() as f:
-            file_path = f.name
-            if output_folder:
-                file_path = os.path.join(output_folder, iou_type + ".json")
-            res = evaluate_predictions_on_coco(
-                dataset.coco, coco_results[iou_type], file_path, iou_type
-            )
-            results.update(res)
-    logger.info(results)
-    check_expected_results(results, expected_results, expected_results_sigma_tol)
+    iou_type = "bbox"
     if output_folder:
-        torch.save(results, os.path.join(output_folder, "coco_results.pth"))
+        file_path = os.path.join(output_folder, iou_type + ".json")
+    results = evaluate_predictions_on_lvis(coco_results[iou_type], file_path, dataset.ann_file)
+    # results = COCOResults(*iou_types)
+    # logger.info("Evaluating predictions")
+    # for iou_type in iou_types:
+    #     with tempfile.NamedTemporaryFile() as f:
+    #         file_path = f.name
+    #         if output_folder:
+    #             file_path = os.path.join(output_folder, iou_type + ".json")
+    #         res = evaluate_predictions_on_coco(
+    #             dataset.coco, coco_results[iou_type], file_path, iou_type
+    #         )
+    #         results.update(res)
+    # logger.info(results)
+    # check_expected_results(results, expected_results, expected_results_sigma_tol)
+    # if output_folder:
+    #     torch.save(results, os.path.join(output_folder, "coco_results.pth"))
     return results, coco_results
 
 
@@ -300,6 +304,19 @@ def evaluate_box_proposals(
         "gt_overlaps": gt_overlaps,
         "num_pos": num_pos,
     }
+
+
+def evaluate_predictions_on_lvis(coco_results, result_path, annotation_path):
+    import json
+
+    with open(result_path, "w") as f:
+        json.dump(coco_results, f)
+
+    from lvis import LVIS, LVISEval
+    lvis_eval = LVISEval(annotation_path, result_path, "bbox")
+    lvis_eval.run()
+    lvis_eval.print_results()
+    return lvis_eval
 
 
 def evaluate_predictions_on_coco(
