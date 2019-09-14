@@ -47,8 +47,6 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         self.is_train = False
         if self.is_lvis:
             if "train" in ann_file:
-                torch.multiprocessing.set_sharing_strategy('file_system')
-                print("Set sharing stratagy, file_system")
                 self.is_train = True
                 self.cids = [*range(1,1231)]
             else:
