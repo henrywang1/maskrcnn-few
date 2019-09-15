@@ -22,7 +22,7 @@ class ROIBoxHead(torch.nn.Module):
         self.loss_evaluator = make_roi_box_loss_evaluator(cfg)
         self.label_set = None
         self.use_transfer = cfg.MODEL.ROI_BOX_HEAD.USE_TRANSFER
-        self.transfer_fc_hidden = make_fc(776*5, 1024)
+        self.transfer_fc_hidden = make_fc(776*5 + 1024, 1024)
         self.transfer_fc_cls = make_fc(1024, 915)
         self.transfer_fc_box = make_fc(1024, 915*4)
         # 776 freq, common
@@ -63,14 +63,11 @@ class ROIBoxHead(torch.nn.Module):
             map_inds = 4 * torch.tensor(self.source_labels)[:, None] + torch.tensor([0, 1, 2, 3])
             map_inds = map_inds.to(box_regression.device).view(-1)
             box_soucre = box_regression[:, map_inds]
-            x = self.transfer_fc_hidden(torch.cat([cls_source, box_soucre], 1))
-            class_logits_target = self.transfer_fc_cls(x)
-            box_regression_target = self.transfer_fc_box(x)
-            class_logits[:, self.target_labels]
-            
+            x = self.transfer_fc_hidden(torch.cat([x, cls_source, box_soucre], 1))
+            class_logits[:, self.target_labels] = self.transfer_fc_cls(x)
             map_inds_target = 4 * torch.tensor(self.target_labels)[:, None] + torch.tensor([0, 1, 2, 3])
             map_inds_target = map_inds_target.to(box_regression.device).view(-1)
-            box_regression[:, map_inds_target] = box_regression_target
+            box_regression[:, map_inds_target] = self.transfer_fc_box(x)
 
         if not self.training:
             result = self.post_processor((class_logits, box_regression), proposals)

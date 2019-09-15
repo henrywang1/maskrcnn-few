@@ -24,6 +24,7 @@ from maskrcnn_benchmark.utils.comm import synchronize, get_rank
 from maskrcnn_benchmark.utils.imports import import_file
 from maskrcnn_benchmark.utils.logger import setup_logger
 from maskrcnn_benchmark.utils.miscellaneous import mkdir, save_config
+from apex.parallel import DistributedDataParallel
 
 # See if we can use apex.DistributedDataParallel instead of the torch default,
 # and enable mixed-precision via apex.amp
@@ -47,11 +48,12 @@ def train(cfg, local_rank, distributed):
     model, optimizer = amp.initialize(model, optimizer, opt_level=amp_opt_level)
 
     if distributed:
-        model = torch.nn.parallel.DistributedDataParallel(
-            model, device_ids=[local_rank], output_device=local_rank,
-            # this should be removed if we update BatchNorm stats
-            broadcast_buffers=False,
-        )
+        model = DistributedDataParallel(model)
+        # model = torch.nn.parallel.DistributedDataParallel(
+        #     model, device_ids=[local_rank], output_device=local_rank,
+        #     # this should be removed if we update BatchNorm stats
+        #     broadcast_buffers=False,
+        # )
 
     arguments = {}
     arguments["iteration"] = 0
@@ -71,6 +73,7 @@ def train(cfg, local_rank, distributed):
         arguments.update(extra_checkpoint_data)
 
     if use_transfer:
+        _model = model
         if distributed:
             model = model.module
         for param in model.parameters():
@@ -96,6 +99,8 @@ def train(cfg, local_rank, distributed):
     model.roi_heads.box.set_label_set(data_loader.dataset.label_set)
     checkpoint_period = cfg.SOLVER.CHECKPOINT_PERIOD
 
+    if use_transfer:
+        model = _model
     do_train(
         model,
         data_loader,
