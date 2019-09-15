@@ -41,14 +41,36 @@ def has_valid_annotation(anno):
 
 class COCODataset(torchvision.datasets.coco.CocoDetection):
     def __init__(
-        self, ann_file, root, remove_images_without_annotations, transforms=None
+        self, ann_file, root, remove_images_without_annotations, transforms=None, use_transfer=False
     ):
+        self.use_transfer = use_transfer
         self.is_lvis = True if "lvis" in ann_file else False
         self.is_train = False
+        self.label_set = {}
         if self.is_lvis:
             if "train" in ann_file:
                 self.is_train = True
                 self.cids = [*range(1,1231)]
+                label_set_file = ann_file + "_label_set.json"
+                if not os.path.isfile(label_set_file) and is_main_process():
+                    with open(ann_file) as f_in:
+                        anns = json.load(f_in)
+                    cat_f = []
+                    cat_c = []
+                    cat_r = []
+                    for a in anns["categories"]:
+                        if a["frequency"] == "f":
+                            cat_f.append(a["id"])
+                        if a["frequency"] == "c":
+                            cat_c.append(a["id"])
+                        if a["frequency"] == "r":
+                            cat_r.append(a["id"])
+                    self.label_set = {"cat_f":cat_f, "cat_c":cat_c, "cat_r":cat_r}
+                    with open(label_set_file, 'w') as f:
+                        json.dump(self.label_set, f, indent=2)
+                synchronize()
+                with open(label_set_file, 'r') as f:
+                    self.label_set = json.load(f)
             else:
                 ann_file_new = ann_file + "_fix"
                 if not os.path.isfile(ann_file_new) and is_main_process():
@@ -99,7 +121,7 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         if not self.is_lvis: # coco
             anno = [obj for obj in anno if obj["iscrowd"] == 0]
 
-        if self.is_train and random.random() > 0.5:
+        if self.is_train and self.use_transfer:
             cls_label = random.sample(self.cids, 1)[0]
             img_by_class = self.coco.getImgIds(catIds=[cls_label])
             idx = random.sample(set(img_by_class), 1)[0]

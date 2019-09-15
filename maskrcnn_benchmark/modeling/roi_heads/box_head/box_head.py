@@ -6,7 +6,7 @@ from .roi_box_feature_extractors import make_roi_box_feature_extractor
 from .roi_box_predictors import make_roi_box_predictor
 from .inference import make_roi_box_post_processor
 from .loss import make_roi_box_loss_evaluator
-
+from maskrcnn_benchmark.modeling.make_layers import make_fc
 
 class ROIBoxHead(torch.nn.Module):
     """
@@ -20,6 +20,17 @@ class ROIBoxHead(torch.nn.Module):
             cfg, self.feature_extractor.out_channels)
         self.post_processor = make_roi_box_post_processor(cfg)
         self.loss_evaluator = make_roi_box_loss_evaluator(cfg)
+        self.label_set = None
+        self.use_transfer = cfg.MODEL.ROI_BOX_HEAD.USE_TRANSFER
+        self.transfer_fc_hidden = make_fc(776*5, 1024)
+        self.transfer_fc_cls = make_fc(1024, 915)
+        self.transfer_fc_box = make_fc(1024, 915*4)
+        # 776 freq, common
+        # 915 common, rare
+    def set_label_set(self, label_set):
+        # self.label_set = label_set
+        self.source_labels = label_set["cat_f"] + label_set["cat_c"]
+        self.target_labels = label_set["cat_c"] + label_set["cat_r"]
 
     def forward(self, features, proposals, targets=None):
         """
@@ -47,6 +58,19 @@ class ROIBoxHead(torch.nn.Module):
         x = self.feature_extractor(features, proposals)
         # final classifier that converts the features into predictions
         class_logits, box_regression = self.predictor(x)
+        if self.use_transfer:
+            cls_source = class_logits[:, self.source_labels]
+            map_inds = 4 * torch.tensor(self.source_labels)[:, None] + torch.tensor([0, 1, 2, 3])
+            map_inds = map_inds.to(box_regression.device).view(-1)
+            box_soucre = box_regression[:, map_inds]
+            x = self.transfer_fc_hidden(torch.cat([cls_source, box_soucre], 1))
+            class_logits_target = self.transfer_fc_cls(x)
+            box_regression_target = self.transfer_fc_box(x)
+            class_logits[:, self.target_labels]
+            
+            map_inds_target = 4 * torch.tensor(self.target_labels)[:, None] + torch.tensor([0, 1, 2, 3])
+            map_inds_target = map_inds_target.to(box_regression.device).view(-1)
+            box_regression[:, map_inds_target] = box_regression_target
 
         if not self.training:
             result = self.post_processor((class_logits, box_regression), proposals)

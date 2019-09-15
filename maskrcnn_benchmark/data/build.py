@@ -15,7 +15,7 @@ from .collate_batch import BatchCollator, BBoxAugCollator
 from .transforms import build_transforms
 
 
-def build_dataset(dataset_list, transforms, dataset_catalog, is_train=True):
+def build_dataset(dataset_list, transforms, dataset_catalog, is_train=True, use_transfer=False):
     """
     Arguments:
         dataset_list (list[str]): Contains the names of the datasets, i.e.,
@@ -38,6 +38,7 @@ def build_dataset(dataset_list, transforms, dataset_catalog, is_train=True):
         # during training
         if data["factory"] == "COCODataset":
             args["remove_images_without_annotations"] = is_train
+            args["use_transfer"] = use_transfer
         if data["factory"] == "PascalVOCDataset":
             args["use_difficult"] = not is_train
         args["transforms"] = transforms
@@ -107,6 +108,7 @@ def make_batch_data_sampler(
 
 def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
     num_gpus = get_world_size()
+    use_transfer = is_train and cfg.MODEL.ROI_BOX_HEAD.USE_TRANSFER
     if is_train:
         images_per_batch = cfg.SOLVER.IMS_PER_BATCH
         assert (
@@ -153,7 +155,7 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
 
     # If bbox aug is enabled in testing, simply set transforms to None and we will apply transforms later
     transforms = None if not is_train and cfg.TEST.BBOX_AUG.ENABLED else build_transforms(cfg, is_train)
-    datasets = build_dataset(dataset_list, transforms, DatasetCatalog, is_train)
+    datasets = build_dataset(dataset_list, transforms, DatasetCatalog, is_train, use_transfer)
 
     if is_train:
         # save category_id to label name mapping
