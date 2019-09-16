@@ -10,6 +10,12 @@ from maskrcnn_benchmark.structures.segmentation_mask import SegmentationMask
 from maskrcnn_benchmark.structures.keypoint import PersonKeypoints
 from maskrcnn_benchmark.utils.comm import is_main_process,synchronize
 
+# RuntimeError: unable to open shared memory object XXXX in read-write mode
+# OSError: [Errno 24] Too many open files
+
+import torch.multiprocessing as mp
+mp.set_sharing_strategy('file_system')
+
 min_keypoints_per_image = 10
 
 
