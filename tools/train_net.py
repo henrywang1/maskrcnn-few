@@ -87,7 +87,7 @@ def train(cfg, local_rank, distributed):
 
         for param in model.roi_heads.box.transfer_fc_hidden.parameters():
             param.requires_grad = True
-      
+
 
     data_loader = make_data_loader(
         cfg,
@@ -96,10 +96,10 @@ def train(cfg, local_rank, distributed):
         start_iter=arguments["iteration"],
     )
 
-    model.roi_heads.box.set_label_set(data_loader.dataset.label_set)
     checkpoint_period = cfg.SOLVER.CHECKPOINT_PERIOD
 
     if use_transfer:
+        model.roi_heads.box.set_label_set(data_loader.dataset.label_set)
         model = _model
     do_train(
         model,
