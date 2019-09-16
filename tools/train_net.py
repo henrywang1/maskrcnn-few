@@ -209,12 +209,11 @@ def main():
     save_config(cfg, output_config_path)
 
     # RuntimeError: unable to open shared memory object XXXX in read-write mode
-    import torch.multiprocessing as mp
-    prev_strategy = mp.get_sharing_strategy()
-    mp.set_sharing_strategy('file_system')
-    mp.set_sharing_strategy('file_system')
+    # import torch.multiprocessing as mp
+    # prev_strategy = mp.get_sharing_strategy()
+    # mp.set_sharing_strategy('file_system')
     model = train(cfg, args.local_rank, args.distributed)
-    mp.set_sharing_strategy(prev_strategy)
+    # mp.set_sharing_strategy(prev_strategy)
 
     if not args.skip_test:
         run_test(cfg, model, args.distributed)
