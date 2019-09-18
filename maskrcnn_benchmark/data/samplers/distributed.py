@@ -22,7 +22,7 @@ class DistributedSampler(Sampler):
         rank (optional): Rank of the current process within num_replicas.
     """
 
-    def __init__(self, dataset, num_replicas=None, rank=None, shuffle=True, oversampling=True):
+    def __init__(self, dataset, num_replicas=None, rank=None, shuffle=True):
         if num_replicas is None:
             if not dist.is_available():
                 raise RuntimeError("Requires distributed package to be available")
@@ -38,10 +38,10 @@ class DistributedSampler(Sampler):
         self.num_samples = int(math.ceil(len(self.dataset) * 1.0 / self.num_replicas))
         self.total_size = self.num_samples * self.num_replicas
         self.shuffle = shuffle
-        self.oversampling = oversampling
+        self.oversampling = dataset.is_train
         if self.dataset.is_train:
             self.img_repeat_factor = dataset.img_repeat_factor
-        self.weights = [v for k, v in self.img_repeat_factor.items()]
+            self.weights = [v for k, v in self.img_repeat_factor.items()]
 
     def __iter__(self):
         if self.shuffle:
