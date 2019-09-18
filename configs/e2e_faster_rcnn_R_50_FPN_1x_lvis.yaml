@@ -1,6 +1,6 @@
 MODEL:
   META_ARCHITECTURE: "GeneralizedRCNN"
-  WEIGHT: "catalog://ImageNetPretrained/MSRA/R-50"
+  WEIGHT: "catalog://Caffe2Detectron/COCO/35858933/e2e_mask_rcnn_R-50-FPN_1x"
   BACKBONE:
     CONV_BODY: "R-50-FPN"
   RESNETS:
@@ -21,6 +21,7 @@ MODEL:
     FEATURE_EXTRACTOR: "FPN2MLPFeatureExtractor"
     PREDICTOR: "FPNPredictor"
     NUM_CLASSES: 1231
+    USE_TRANSFER: True
 DATASETS:
   TRAIN: ("lvis_train_cocostyle", )
   TEST: ("lvis_val_cocostyle", )
