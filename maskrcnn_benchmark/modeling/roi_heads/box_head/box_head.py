@@ -25,6 +25,10 @@ class ROIBoxHead(torch.nn.Module):
         self.transfer_fc_hidden = make_fc(776*5 + 1024, 1024)
         self.transfer_fc_cls = make_fc(1024, 915)
         self.transfer_fc_box = make_fc(1024, 915*4)
+        if self.use_transfer:
+            with open("label_word_vector.npy", "rb") as f:
+                import numpy as np
+                self.label_word_vector = np.load(f)
         # 776 freq, common
         # 915 common, rare
     def set_label_set(self, label_set):
@@ -63,6 +67,7 @@ class ROIBoxHead(torch.nn.Module):
             map_inds = 4 * torch.tensor(self.source_labels)[:, None] + torch.tensor([0, 1, 2, 3])
             map_inds = map_inds.to(box_regression.device).view(-1)
             box_soucre = box_regression[:, map_inds]
+
             x = self.transfer_fc_hidden(torch.cat([x, cls_source, box_soucre], 1))
             class_logits[:, self.target_labels] = self.transfer_fc_cls(x)
             map_inds_target = 4 * torch.tensor(self.target_labels)[:, None] + torch.tensor([0, 1, 2, 3])

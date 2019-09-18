@@ -4,6 +4,7 @@ import torch
 import torchvision
 import json
 import random
+import math
 
 from maskrcnn_benchmark.structures.bounding_box import BoxList
 from maskrcnn_benchmark.structures.segmentation_mask import SegmentationMask
@@ -56,6 +57,7 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         if self.is_lvis:
             ann_path = ann_file[:ann_file.rfind("/")+1]
             label_set_file = ann_path + "label_set.json"
+            self.cids = [*range(1,1231)]
             if not os.path.isfile(label_set_file) and is_main_process():
                 with open(ann_file) as f_in:
                     anns = json.load(f_in)
@@ -77,7 +79,6 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
                 self.label_set = json.load(f)
             if "train" in ann_file:
                 self.is_train = True
-                self.cids = [*range(1,1231)]
             else:
                 ann_file_new = ann_file + "_fix"
                 if not os.path.isfile(ann_file_new) and is_main_process():
@@ -99,6 +100,8 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         self.ids = sorted(self.ids)
    
         # filter images without detection annotations
+        class_fractions = {i: 0 for i in range(1, 1231)}
+        img_cls = {i: [] for i in self.ids}
         if remove_images_without_annotations:
             ids = []
             for img_id in self.ids:
@@ -106,7 +109,23 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
                 anno = self.coco.loadAnns(ann_ids)
                 if has_valid_annotation(anno):
                     ids.append(img_id)
+                    if self.is_train:
+                        img_cids = list(set(ann["category_id"] for ann in anno))
+                        img_cls[img_id] = img_cids
+                        for c in img_cids:
+                            class_fractions[c] += 1
+
             self.ids = ids
+            if self.is_train:
+                for k, v in class_fractions.items():
+                    class_fractions[k] = v/len(ids)
+                self.img_repeat_factor = {i: 0.0 for i in self.ids}
+                for img_id in self.ids:
+                    all_class_fractions = [class_fractions[i] for i in img_cls[img_id]]
+                    all_repeat_factor = [math.sqrt(0.001/fc) for fc in all_class_fractions]
+                    repeat_factor = max(all_repeat_factor)
+                    repeat_factor = max(1, repeat_factor)
+                    self.img_repeat_factor[img_id] = repeat_factor
 
         self.img_to_id_map = {k: v for v, k in enumerate(self.ids)}
         self.categories = {cat['id']: cat['name'] for cat in self.coco.cats.values()}

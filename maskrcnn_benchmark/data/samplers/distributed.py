@@ -22,7 +22,7 @@ class DistributedSampler(Sampler):
         rank (optional): Rank of the current process within num_replicas.
     """
 
-    def __init__(self, dataset, num_replicas=None, rank=None, shuffle=True):
+    def __init__(self, dataset, num_replicas=None, rank=None, shuffle=True, oversampling=True):
         if num_replicas is None:
             if not dist.is_available():
                 raise RuntimeError("Requires distributed package to be available")
@@ -38,13 +38,20 @@ class DistributedSampler(Sampler):
         self.num_samples = int(math.ceil(len(self.dataset) * 1.0 / self.num_replicas))
         self.total_size = self.num_samples * self.num_replicas
         self.shuffle = shuffle
+        self.oversampling = oversampling
+        if self.dataset.is_train:
+            self.img_repeat_factor = dataset.img_repeat_factor
+        self.weights = [v for k, v in self.img_repeat_factor.items()]
 
     def __iter__(self):
         if self.shuffle:
             # deterministically shuffle based on epoch
             g = torch.Generator()
             g.manual_seed(self.epoch)
-            indices = torch.randperm(len(self.dataset), generator=g).tolist()
+            if self.oversampling:
+                indices = torch.multinomial(torch.tensor(self.weights), len(self.dataset), True).tolist()
+            else:
+                indices = torch.randperm(len(self.dataset), generator=g).tolist()
         else:
             indices = torch.arange(len(self.dataset)).tolist()
 
