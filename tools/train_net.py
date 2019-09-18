@@ -66,27 +66,27 @@ def train(cfg, local_rank, distributed):
     )
     load_roi = cfg.SOLVER.CHECKPOINT_LOAD_ROI
     use_transfer = cfg.MODEL.ROI_BOX_HEAD.USE_TRANSFER
-    extra_checkpoint_data = checkpointer.load(cfg.MODEL.WEIGHT, load_roi=load_roi, use_transfer=use_transfer)
+    extra_checkpoint_data = checkpointer.load(cfg.MODEL.WEIGHT, load_roi=load_roi)
 
     # ['optimizer', 'scheduler', 'iteration']
-    if load_roi and not use_transfer:
+    if load_roi:
         arguments.update(extra_checkpoint_data)
 
-    if use_transfer:
-        _model = model
-        if distributed:
-            model = model.module
-        for param in model.parameters():
-            param.requires_grad = False
+    # if use_transfer:
+    #     _model = model
+    #     if distributed:
+    #         model = model.module
+    #     for param in model.parameters():
+    #         param.requires_grad = False
 
-        for param in model.roi_heads.box.transfer_fc_cls.parameters():
-            param.requires_grad = True
+    #     for param in model.roi_heads.box.transfer_fc_cls.parameters():
+    #         param.requires_grad = True
 
-        for param in model.roi_heads.box.transfer_fc_box.parameters():
-            param.requires_grad = True
+    #     for param in model.roi_heads.box.transfer_fc_box.parameters():
+    #         param.requires_grad = True
 
-        for param in model.roi_heads.box.transfer_fc_hidden.parameters():
-            param.requires_grad = True
+    #     for param in model.roi_heads.box.transfer_fc_hidden.parameters():
+    #         param.requires_grad = True
 
 
     data_loader = make_data_loader(
@@ -99,8 +99,9 @@ def train(cfg, local_rank, distributed):
     checkpoint_period = cfg.SOLVER.CHECKPOINT_PERIOD
 
     if use_transfer:
-        model.roi_heads.box.set_label_set(data_loader.dataset.label_set)
-        model = _model
+        _model = model.module if distributed else model
+        _model.roi_heads.box.set_label_set(data_loader.dataset.label_set)
+
     do_train(
         model,
         data_loader,

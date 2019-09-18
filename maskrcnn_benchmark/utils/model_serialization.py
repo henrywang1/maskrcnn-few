@@ -25,15 +25,29 @@ def align_and_update_state_dicts(model_state_dict, loaded_state_dict, load_roi=T
     current_keys = sorted(list(model_state_dict.keys()))
     loaded_keys = sorted(list(loaded_state_dict.keys()))
     if not load_roi:
-        skip_keys = ["roi_heads.mask.predictor.mask_fcn_logits.weight",
+        skip_keys = [
+                     "cls_score.bias",
+                     "cls_score.weight",
+                     "bbox_pred.bias",
+                     "bbox_pred.weight"
+                     "mask_fcn_logits.bias",
+                     "mask_fcn_logits.weight",
+                     "roi_heads.mask.predictor.mask_fcn_logits.weight",
                      "roi_heads.box.predictor.cls_score.weight",
                      "roi_heads.box.predictor.bbox_pred.weight",
                      "roi_heads.mask.predictor.mask_fcn_logits.bias",
                      "roi_heads.box.predictor.cls_score.bias",
                      "roi_heads.box.predictor.bbox_pred.bias",
+                     "module.roi_heads.mask.predictor.mask_fcn_logits.weight",
+                     "module.roi_heads.box.predictor.cls_score.weight",
+                     "module.roi_heads.box.predictor.bbox_pred.weight",
+                     "module.roi_heads.mask.predictor.mask_fcn_logits.bias",
+                     "module.roi_heads.box.predictor.cls_score.bias",
+                     "module.roi_heads.box.predictor.bbox_pred.bias",
                     ]
 
         loaded_keys = [l for l in loaded_keys if not l in skip_keys]
+        current_keys = [l for l in current_keys if not l in skip_keys]
     # get a matrix of string matches, where each (i, j) entry correspond to the size of the
     # loaded_key string, if it matches
     match_matrix = [
@@ -87,4 +101,5 @@ def load_state_dict(model, loaded_state_dict, load_roi=True):
     align_and_update_state_dicts(model_state_dict, loaded_state_dict, load_roi)
 
     # use strict loading
+    # import pdb; pdb.set_trace()
     model.load_state_dict(model_state_dict)
