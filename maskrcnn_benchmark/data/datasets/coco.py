@@ -54,13 +54,11 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         self.is_train = False
         self.label_set = {}
         if self.is_lvis:
-            if "train" in ann_file:
-                self.is_train = True
-                self.cids = [*range(1,1231)]
-                label_set_file = ann_file + "_label_set.json"
-                if not os.path.isfile(label_set_file) and is_main_process():
-                    with open(ann_file) as f_in:
-                        anns = json.load(f_in)
+            ann_path = ann_file[:ann_file.rfind("/")+1]
+            label_set_file = ann_path + "label_set.json"
+            if not os.path.isfile(label_set_file) and is_main_process():
+                with open(ann_file) as f_in:
+                    anns = json.load(f_in)
                     cat_f = []
                     cat_c = []
                     cat_r = []
@@ -74,9 +72,12 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
                     self.label_set = {"cat_f":cat_f, "cat_c":cat_c, "cat_r":cat_r}
                     with open(label_set_file, 'w') as f:
                         json.dump(self.label_set, f, indent=2)
-                synchronize()
-                with open(label_set_file, 'r') as f:
-                    self.label_set = json.load(f)
+            synchronize()
+            with open(label_set_file, 'r') as f:
+                self.label_set = json.load(f)
+            if "train" in ann_file:
+                self.is_train = True
+                self.cids = [*range(1,1231)]
             else:
                 ann_file_new = ann_file + "_fix"
                 if not os.path.isfile(ann_file_new) and is_main_process():
