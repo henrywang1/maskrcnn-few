@@ -147,12 +147,12 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         if not self.is_lvis: # coco
             anno = [obj for obj in anno if obj["iscrowd"] == 0]
 
-        if self.is_train and self.use_transfer:
-            cls_label = random.sample(self.cids, 1)[0]
-            img_by_class = self.coco.getImgIds(catIds=[cls_label])
-            idx = random.sample(set(img_by_class), 1)[0]
-            idx = self.img_to_id_map[idx]
-            img, anno = super(COCODataset, self).__getitem__(idx)
+        # if self.is_train and self.use_transfer:
+        #     cls_label = random.sample(self.cids, 1)[0]
+        #     img_by_class = self.coco.getImgIds(catIds=[cls_label])
+        #     idx = random.sample(set(img_by_class), 1)[0]
+        #     idx = self.img_to_id_map[idx]
+        #     img, anno = super(COCODataset, self).__getitem__(idx)
 
         boxes = [obj["bbox"] for obj in anno]
         boxes = torch.as_tensor(boxes).reshape(-1, 4)  # guard against no boxes
