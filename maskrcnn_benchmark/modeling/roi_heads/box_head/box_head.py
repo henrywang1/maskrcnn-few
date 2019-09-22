@@ -86,9 +86,9 @@ class ROIBoxHead(torch.nn.Module):
         class_logits = class_logits_stacked
         box_regression = box_regression_stacked
 
+        class_logits = class_logits[:, :1231]
+        box_regression = box_regression[:, :1231*4]
         if not self.training:
-            class_logits = class_logits[:, :1231]
-            box_regression = box_regression[:, :1231*4]
             result = self.post_processor((class_logits, box_regression), proposals)
             return x, result, {}
 
