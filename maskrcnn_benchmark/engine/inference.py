@@ -70,15 +70,10 @@ def inference(
         expected_results=(),
         expected_results_sigma_tol=4,
         output_folder=None,
-        use_transfer=False
 ):
     # convert to a torch.device for efficiency
     # num_gpus = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
     # distributed = num_gpus > 1
-    if use_transfer:
-        #if distributed:
-        #    _model = model.module if distributed else model
-        model.roi_heads.box.set_label_set(data_loader.dataset.label_set)
 
     device = torch.device(device)
     num_devices = get_world_size()

@@ -21,24 +21,12 @@ class ROIBoxHead(torch.nn.Module):
             cfg, self.feature_extractor.out_channels)
         self.post_processor = make_roi_box_post_processor(cfg)
         self.loss_evaluator = make_roi_box_loss_evaluator(cfg)
-        self.label_set = None
-        self.use_transfer = cfg.MODEL.ROI_BOX_HEAD.USE_TRANSFER
-        self.transfer_fc_hidden = make_fc(776*5 + 1024, 1024)
-        # self.transfer_word = make_fc(1024, 300) #300 + 768
-        self.transfer_fc_cls = make_fc(1024, 915)
-        self.transfer_fc_box = make_fc(1024, 915*4)
-        #if self.use_transfer:
-        #    with open("label_word_vector.npy", "rb") as f:
-        #        import numpy as np
-        #        label_word_vector = np.load(f)
-        #        self.label_word_vector =torch.tensor(label_word_vector).to("cuda")
-                # self.label_word_vector = self.label_word_vector.t()
-        # 776 freq, common
-        # 915 common, rare
-    def set_label_set(self, label_set):
-        # self.label_set = label_set
-        self.source_labels = label_set["cat_f"] + label_set["cat_c"]
-        self.target_labels = label_set["cat_c"] + label_set["cat_r"]
+
+        import pickle
+        with open("relation.pickle", "rb") as f:
+            relation = pickle.load(f)
+        self.label_targets = relation["label_targets"]
+        self.label_sources = relation["label_sources"]
 
     def cosine_distance(self, a, b):
         n = a.shape[0]
@@ -46,9 +34,12 @@ class ROIBoxHead(torch.nn.Module):
         a = a.unsqueeze(1).expand(n, m, -1)
         b = b.unsqueeze(0).expand(n, m, -1)
         return F.cosine_similarity(a, b, 2)
-        #import pdb; pdb.set_trace()
-        #logits = -((a - b)**2).sum(dim=2)
-        #return logits
+
+    def get_map_inds(self, label):
+        map_inds = 4 * torch.tensor(label)[:, None] + torch.tensor([0, 1, 2, 3])
+        map_inds = map_inds.cuda().view(-1)
+        return map_inds
+
     def forward(self, features, proposals, targets=None):
         """
         Arguments:
@@ -75,39 +66,35 @@ class ROIBoxHead(torch.nn.Module):
         x = self.feature_extractor(features, proposals)
         # final classifier that converts the features into predictions
         class_logits, box_regression = self.predictor(x)
-        if self.use_transfer:
-            # x_word = self.transfer_word(x)
-            # word_dist = self.cosine_distance(x_word, self.label_word_vector)
-            # x_word_feature = torch.cdist(x_word, self.label_word_vector, 1)
-            cls_source = class_logits[:, self.source_labels]
-            map_inds = 4 * torch.tensor(self.source_labels)[:, None] + torch.tensor([0, 1, 2, 3])
-            map_inds = map_inds.to(x.device).view(-1)
-            box_soucre = box_regression[:, map_inds]
-            # x_word.unsqueeze(2).expand(1786, 1068, 1230)
-            # self.label_word_vector.unsqueeze(0).expand(1786, 1068, 1230)
-            x = self.transfer_fc_hidden(torch.cat([x, cls_source, box_soucre], 1))            
-            # class_logits = self.transfer_fc_cls(x)
-            # box_regression = self.transfer_fc_box(x)
-            class_logits_aux, box_regression_aux = class_logits, box_regression
-            class_logits = class_logits.clone()
-            box_regression = box_regression.clone()
-            class_logits[:, self.target_labels] = self.transfer_fc_cls(x)
-            map_inds_target = 4 * torch.tensor(self.target_labels)[:, None] + torch.tensor([0, 1, 2, 3])
-            map_inds_target = map_inds_target.to(box_regression.device).view(-1)
-            box_regression[:, map_inds_target] = self.transfer_fc_box(x)
+
+        class_logits_stacked = class_logits.clone()
+        box_regression_stacked = box_regression.clone()
+
+        for label_targets, label_sources in zip(self.label_targets, self.label_sources):
+            class_logits_prev = class_logits_stacked.clone()
+            source = class_logits_prev[:, label_sources].clone()
+            target = class_logits[:, label_targets].clone()
+            class_logits_stacked[:, label_targets] = source + target
+
+            box_regression_prev = box_regression_stacked.clone()
+            map_ids_src = self.get_map_inds(label_targets)
+            map_ids_tgt = self.get_map_inds(label_sources)
+            source_box = box_regression_prev[:, map_ids_src].clone()
+            target_box = box_regression[:, map_ids_tgt].clone()
+            box_regression_stacked[:, map_ids_tgt] = source_box + target_box
+            
+        class_logits = class_logits_stacked
+        box_regression = box_regression_stacked
 
         if not self.training:
+            class_logits = class_logits[:, :1231]
+            box_regression = box_regression[:, :1231*4]
             result = self.post_processor((class_logits, box_regression), proposals)
             return x, result, {}
 
         loss_classifier, loss_box_reg = self.loss_evaluator(
             [class_logits], [box_regression]
         )
-        loss_classifier_aux, loss_box_reg_aux = self.loss_evaluator(
-            [class_logits_aux], [box_regression_aux]
-        )
-        loss_classifier = loss_classifier_aux*0.2 + loss_classifier*0.8
-        loss_box_reg = loss_box_reg_aux*0.2 + loss_box_reg*0.8
         return (
             x,
             proposals,

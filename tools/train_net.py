@@ -65,7 +65,6 @@ def train(cfg, local_rank, distributed):
         cfg, model, optimizer, scheduler, output_dir, save_to_disk
     )
     load_roi = cfg.SOLVER.CHECKPOINT_LOAD_ROI
-    use_transfer = cfg.MODEL.ROI_BOX_HEAD.USE_TRANSFER
     extra_checkpoint_data = checkpointer.load(cfg.MODEL.WEIGHT, load_roi=load_roi)
 
     # ['optimizer', 'scheduler', 'iteration']
@@ -97,10 +96,6 @@ def train(cfg, local_rank, distributed):
     )
 
     checkpoint_period = cfg.SOLVER.CHECKPOINT_PERIOD
-
-    if use_transfer:
-        _model = model.module if distributed else model
-        _model.roi_heads.box.set_label_set(data_loader.dataset.label_set)
 
     do_train(
         model,

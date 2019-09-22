@@ -10,7 +10,7 @@ from maskrcnn_benchmark.structures.bounding_box import BoxList
 from maskrcnn_benchmark.structures.segmentation_mask import SegmentationMask
 from maskrcnn_benchmark.structures.keypoint import PersonKeypoints
 from maskrcnn_benchmark.utils.comm import is_main_process,synchronize
-
+import pickle
 # RuntimeError: unable to open shared memory object XXXX in read-write mode
 # OSError: [Errno 24] Too many open files
 
@@ -48,9 +48,8 @@ def has_valid_annotation(anno):
 
 class COCODataset(torchvision.datasets.coco.CocoDetection):
     def __init__(
-        self, ann_file, root, remove_images_without_annotations, transforms=None, use_transfer=False
+        self, ann_file, root, remove_images_without_annotations, transforms=None
     ):
-        self.use_transfer = use_transfer
         self.is_lvis = True if "lvis" in ann_file else False
         self.is_train = False
         self.label_set = {}
@@ -102,12 +101,22 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         # filter images without detection annotations
         class_fractions = {i: 0 for i in range(1, 1231)}
         img_cls = {i: [] for i in self.ids}
+        # all_ann_ids = self.coco.getAnnIds()
+        # anno = self.coco.loadAnns(all_ann_ids)
+        # from collections import Counter
+        # all_length = []
+        # for img_id in self.ids:
+        #     ann_ids = self.coco.getAnnIds(imgIds=img_id, iscrowd=None)
+        #     all_length.append(len(ann_ids))
+        # sorted(x.items(), key=lambda i: i[0], reverse=True)
+        # x = Counter(all_length).most_common(
+        # import pdb; pdb.set_trace()
         if remove_images_without_annotations:
             ids = []
             for img_id in self.ids:
                 ann_ids = self.coco.getAnnIds(imgIds=img_id, iscrowd=None)
                 anno = self.coco.loadAnns(ann_ids)
-                if has_valid_annotation(anno):
+                if len(anno)<400 and has_valid_annotation(anno):
                     ids.append(img_id)
                     if self.is_train:
                         img_cids = list(set(ann["category_id"] for ann in anno))
@@ -138,6 +147,12 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         }
         self.id_to_img_map = {k: v for k, v in enumerate(self.ids)}
         self._transforms = transforms
+        with open("relation.pickle", "rb") as f:
+            relation = pickle.load(f)
+            self.label_table_0 = relation['label_tables'][0]
+            self.label_table_1 = relation['label_tables'][1]
+            self.label_table_2 = relation['label_tables'][2]
+            self.label_table_3 = relation['label_tables'][3]
 
     def __getitem__(self, idx):
         img, anno = super(COCODataset, self).__getitem__(idx)
@@ -147,21 +162,21 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         if not self.is_lvis: # coco
             anno = [obj for obj in anno if obj["iscrowd"] == 0]
 
-        # if self.is_train and self.use_transfer:
-        #     cls_label = random.sample(self.cids, 1)[0]
-        #     img_by_class = self.coco.getImgIds(catIds=[cls_label])
-        #     idx = random.sample(set(img_by_class), 1)[0]
-        #     idx = self.img_to_id_map[idx]
-        #     img, anno = super(COCODataset, self).__getitem__(idx)
-
         boxes = [obj["bbox"] for obj in anno]
         boxes = torch.as_tensor(boxes).reshape(-1, 4)  # guard against no boxes
         target = BoxList(boxes, img.size, mode="xywh").convert("xyxy")
 
         classes = [obj["category_id"] for obj in anno]
         classes = [self.json_category_id_to_contiguous_id[c] for c in classes]
-        classes = torch.tensor(classes)
-        target.add_field("labels", classes)
+        classes_0 = [self.label_table_0[i] for i in classes]
+        classes_1 = [self.label_table_1[i] for i in classes]
+        classes_2 = [self.label_table_2[i] for i in classes]
+        classes_3 = [self.label_table_3[i] for i in classes]
+        target.add_field("labels", torch.tensor(classes))
+        target.add_field("labels_0", torch.tensor(classes_0))
+        target.add_field("labels_1", torch.tensor(classes_1))
+        target.add_field("labels_2", torch.tensor(classes_2))
+        target.add_field("labels_3", torch.tensor(classes_3))
 
         if anno and "segmentation" in anno[0]:
             masks = [obj["segmentation"] for obj in anno]

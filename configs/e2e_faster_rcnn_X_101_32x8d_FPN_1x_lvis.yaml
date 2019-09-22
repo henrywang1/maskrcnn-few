@@ -23,7 +23,7 @@ MODEL:
     BACKBONE_OUT_CHANNELS: 256
     STRIDE_IN_1X1: False
     NUM_GROUPS: 32
-    WIDTH_PER_GROUP: 8    
+    WIDTH_PER_GROUP: 8
 DATASETS:
   TRAIN: ("lvis_train_cocostyle", )
   TEST: ("lvis_val_cocostyle", )

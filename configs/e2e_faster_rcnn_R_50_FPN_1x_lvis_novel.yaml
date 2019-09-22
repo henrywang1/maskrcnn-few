@@ -21,7 +21,6 @@ MODEL:
     FEATURE_EXTRACTOR: "FPN2MLPFeatureExtractor"
     PREDICTOR: "FPNPredictor"
     NUM_CLASSES: 1231
-    USE_TRANSFER: True
 DATASETS:
   TRAIN: ("lvis_train_cocostyle", )
   TEST: ("lvis_val_cocostyle", )
