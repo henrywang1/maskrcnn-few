@@ -101,22 +101,20 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         # filter images without detection annotations
         class_fractions = {i: 0 for i in range(1, 1231)}
         img_cls = {i: [] for i in self.ids}
-        # all_ann_ids = self.coco.getAnnIds()
-        # anno = self.coco.loadAnns(all_ann_ids)
         # from collections import Counter
         # all_length = []
         # for img_id in self.ids:
         #     ann_ids = self.coco.getAnnIds(imgIds=img_id, iscrowd=None)
         #     all_length.append(len(ann_ids))
-        # sorted(x.items(), key=lambda i: i[0], reverse=True)
-        # x = Counter(all_length).most_common(
-        # import pdb; pdb.set_trace()
+        # x = Counter(all_length)
+        # print(sorted(x.items(), key=lambda i: i[0], reverse=True))
+
         if remove_images_without_annotations:
             ids = []
             for img_id in self.ids:
                 ann_ids = self.coco.getAnnIds(imgIds=img_id, iscrowd=None)
                 anno = self.coco.loadAnns(ann_ids)
-                if len(anno)<400 and has_valid_annotation(anno):
+                if len(anno)<300 and has_valid_annotation(anno):
                     ids.append(img_id)
                     if self.is_train:
                         img_cids = list(set(ann["category_id"] for ann in anno))
@@ -162,21 +160,26 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         if not self.is_lvis: # coco
             anno = [obj for obj in anno if obj["iscrowd"] == 0]
 
+        # for i, x in enumerate(anno):
+        #     for j, y in enumerate(anno):
+        #         if j <=i:
+        #             continue
+        #         if x["area"] == y["area"] and x["bbox"] == y["bbox"]:
+        #             print(x['category_id'], y['category_id'])
         boxes = [obj["bbox"] for obj in anno]
         boxes = torch.as_tensor(boxes).reshape(-1, 4)  # guard against no boxes
         target = BoxList(boxes, img.size, mode="xywh").convert("xyxy")
-
         classes = [obj["category_id"] for obj in anno]
         classes = [self.json_category_id_to_contiguous_id[c] for c in classes]
-        classes_0 = [self.label_table_0[i] for i in classes]
-        classes_1 = [self.label_table_1[i] for i in classes]
-        classes_2 = [self.label_table_2[i] for i in classes]
-        classes_3 = [self.label_table_3[i] for i in classes]
+        # classes_0 = [self.label_table_0[i] for i in classes]
+        # classes_1 = [self.label_table_1[i] for i in classes]
+        # classes_2 = [self.label_table_2[i] for i in classes]
+        # classes_3 = [self.label_table_3[i] for i in classes]
         target.add_field("labels", torch.tensor(classes))
-        target.add_field("labels_0", torch.tensor(classes_0))
-        target.add_field("labels_1", torch.tensor(classes_1))
-        target.add_field("labels_2", torch.tensor(classes_2))
-        target.add_field("labels_3", torch.tensor(classes_3))
+        # target.add_field("labels_0", torch.tensor(classes_0))
+        # target.add_field("labels_1", torch.tensor(classes_1))
+        # target.add_field("labels_2", torch.tensor(classes_2))
+        # target.add_field("labels_3", torch.tensor(classes_3))
 
         if anno and "segmentation" in anno[0]:
             masks = [obj["segmentation"] for obj in anno]

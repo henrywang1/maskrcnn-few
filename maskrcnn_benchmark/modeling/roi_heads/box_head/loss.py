@@ -40,7 +40,7 @@ class FastRCNNLossComputation(object):
         match_quality_matrix = boxlist_iou(target, proposal)
         matched_idxs = self.proposal_matcher(match_quality_matrix)
         # Fast RCNN only need "labels" field for selecting the targets
-        target = target.copy_with_fields(["labels","labels_0","labels_1","labels_2", "labels_3"])
+        target = target.copy_with_fields(["labels"]) #,"labels_0","labels_1","labels_2", "labels_3"
         # get the targets corresponding GT for each proposal
         # NB: need to clamp the indices because we can have a single
         # GT in the image, and matched_idxs can be -2, which goes
@@ -51,10 +51,10 @@ class FastRCNNLossComputation(object):
 
     def prepare_targets(self, proposals, targets):
         labels = []
-        labels_0 = []
-        labels_1 = []
-        labels_2 = []
-        labels_3 = []
+        # labels_0 = []
+        # labels_1 = []
+        # labels_2 = []
+        # labels_3 = []
         regression_targets = []
         for proposals_per_image, targets_per_image in zip(proposals, targets):
             matched_targets = self.match_targets_to_proposals(
@@ -65,32 +65,38 @@ class FastRCNNLossComputation(object):
             labels_per_image = matched_targets.get_field("labels")
             labels_per_image = labels_per_image.to(dtype=torch.int64)
 
-            labels_0_per_image = matched_targets.get_field("labels_0").to(dtype=torch.int64)
-            labels_1_per_image = matched_targets.get_field("labels_1").to(dtype=torch.int64)
-            labels_2_per_image = matched_targets.get_field("labels_2").to(dtype=torch.int64)
-            labels_3_per_image = matched_targets.get_field("labels_3").to(dtype=torch.int64)
+            # labels_0_per_image = matched_targets.get_field("labels_0").to(dtype=torch.int64)
+            # labels_1_per_image = matched_targets.get_field("labels_1").to(dtype=torch.int64)
+            # labels_2_per_image = matched_targets.get_field("labels_2").to(dtype=torch.int64)
+            # labels_3_per_image = matched_targets.get_field("labels_3").to(dtype=torch.int64)
 
             # Label background (below the low threshold)
             bg_inds = matched_idxs == Matcher.BELOW_LOW_THRESHOLD
             labels_per_image[bg_inds] = 0
+            # labels_1_per_image[bg_inds] = 0
+            # labels_2_per_image[bg_inds] = 0
+            # labels_3_per_image[bg_inds] = 0
 
             # Label ignore proposals (between low and high thresholds)
             ignore_inds = matched_idxs == Matcher.BETWEEN_THRESHOLDS
             labels_per_image[ignore_inds] = -1  # -1 is ignored by sampler
+            # labels_0_per_image[ignore_inds] = -1
+            # labels_1_per_image[ignore_inds] = -1
+            # labels_2_per_image[ignore_inds] = -1
+            # labels_3_per_image[ignore_inds] = -1
 
             # compute regression targets
             regression_targets_per_image = self.box_coder.encode(
                 matched_targets.bbox, proposals_per_image.bbox
             )
-
             labels.append(labels_per_image)
-            labels_0.append(labels_0_per_image)
-            labels_1.append(labels_1_per_image)
-            labels_2.append(labels_2_per_image)
-            labels_3.append(labels_3_per_image)
+            # labels_0.append(labels_0_per_image)
+            # labels_1.append(labels_1_per_image)
+            # labels_2.append(labels_2_per_image)
+            # labels_3.append(labels_3_per_image)
             regression_targets.append(regression_targets_per_image)
 
-        return labels, regression_targets, labels_0, labels_1, labels_2, labels_3
+        return labels, regression_targets#, labels_0, labels_1, labels_2, labels_3
 
     def subsample(self, proposals, targets):
         """
@@ -103,20 +109,19 @@ class FastRCNNLossComputation(object):
             targets (list[BoxList])
         """
 
-        labels, regression_targets, labels_0, labels_1, labels_2, labels_3 = self.prepare_targets(proposals, targets)
+        labels, regression_targets = self.prepare_targets(proposals, targets) #, labels_0, labels_1, labels_2, labels_3
         sampled_pos_inds, sampled_neg_inds = self.fg_bg_sampler(labels)
 
         proposals = list(proposals)
         # add corresponding label and regression_targets information to the bounding boxes
-        for labels_per_image, regression_targets_per_image, proposals_per_image, \
-            labels_0_per_image, labels_1_per_image, labels_2_per_image, labels_3_per_image in zip(
-            labels, regression_targets, proposals, labels_0, labels_1, labels_2, labels_3
-        ):
+        for labels_per_image, regression_targets_per_image, proposals_per_image in zip(labels, regression_targets, proposals):
+            #labels_0_per_image, labels_1_per_image, labels_2_per_image, labels_3_per_image
+            # labels_0, labels_1, labels_2, labels_3
             proposals_per_image.add_field("labels", labels_per_image)
-            proposals_per_image.add_field("labels_0", labels_0_per_image)
-            proposals_per_image.add_field("labels_1", labels_1_per_image)
-            proposals_per_image.add_field("labels_2", labels_2_per_image)
-            proposals_per_image.add_field("labels_3", labels_3_per_image)
+            # proposals_per_image.add_field("labels_0", labels_0_per_image)
+            # proposals_per_image.add_field("labels_1", labels_1_per_image)
+            # proposals_per_image.add_field("labels_2", labels_2_per_image)
+            # proposals_per_image.add_field("labels_3", labels_3_per_image)
             proposals_per_image.add_field(
                 "regression_targets", regression_targets_per_image
             )
@@ -157,22 +162,34 @@ class FastRCNNLossComputation(object):
         proposals = self._proposals
 
         labels = cat([proposal.get_field("labels") for proposal in proposals], dim=0)
-        labels_0 = cat([proposal.get_field("labels_0") for proposal in proposals], dim=0)
-        labels_1 = cat([proposal.get_field("labels_1") for proposal in proposals], dim=0)
-        labels_2 = cat([proposal.get_field("labels_2") for proposal in proposals], dim=0)
-        labels_3 = cat([proposal.get_field("labels_3") for proposal in proposals], dim=0)
-
+        # labels_0 = cat([proposal.get_field("labels_0") for proposal in proposals], dim=0)
+        # labels_1 = cat([proposal.get_field("labels_1") for proposal in proposals], dim=0)
+        # labels_2 = cat([proposal.get_field("labels_2") for proposal in proposals], dim=0)
+        # labels_3 = cat([proposal.get_field("labels_3") for proposal in proposals], dim=0)
+        
+        #labels = labels.unsqueeze(0)
+        #.scatter_(1, labels, 1.)
+        #1301
         regression_targets = cat(
             [proposal.get_field("regression_targets") for proposal in proposals], dim=0
         )
 
+        # cls_loss_0 = F.cross_entropy(class_logits, labels_0, reduction='none')[labels_0 > -100]
+        # cls_loss_1 = F.cross_entropy(class_logits, labels_1, reduction='none')[labels_1 > -100]
+        # cls_loss_2 = F.cross_entropy(class_logits, labels_2, reduction='none')[labels_2 > -100]
+        # cls_loss_3 = F.cross_entropy(class_logits, labels_3, reduction='none')[labels_3 > -100]
 
-        cls_loss_0 = F.cross_entropy(class_logits, labels_0, reduction='none')[labels_0 > -100]
-        cls_loss_1 = F.cross_entropy(class_logits, labels_1, reduction='none')[labels_1 > -100]
-        cls_loss_2 = F.cross_entropy(class_logits, labels_2, reduction='none')[labels_2 > -100]
-        cls_loss_3 = F.cross_entropy(class_logits, labels_3, reduction='none')[labels_3 > -100]
+        # bce_criterion = nn.BCEWithLogitsLoss(weight=None)
+        # target = torch.zeros(labels.size(0), 1301).cuda()
+        # target = target.scatter(1, labels.unsqueeze(1), value=1.)
 
-        classification_loss = torch.cat([cls_loss_0, cls_loss_1, cls_loss_2, cls_loss_3]).mean()
+        # F.cross_entropy(class_logits, labels)
+        # bce_criterion(class_logits, target)
+
+        classification_loss = F.cross_entropy(class_logits, labels)
+
+        #import pdb; pdb.set_trace()
+        #classification_loss = F.cross_entropy(class_logits, labels)#[labels_0 > -100]
         # get indices that correspond to the regression targets for
         # the corresponding ground truth labels, to be used with
         # advanced indexing
