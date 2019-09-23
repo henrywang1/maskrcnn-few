@@ -66,28 +66,6 @@ class ROIBoxHead(torch.nn.Module):
         x = self.feature_extractor(features, proposals)
         # final classifier that converts the features into predictions
         class_logits, box_regression = self.predictor(x)
-
-        class_logits_stacked = class_logits.clone()
-        box_regression_stacked = box_regression.clone()
-
-        for label_targets, label_sources in zip(self.label_targets, self.label_sources):
-            class_logits_prev = class_logits_stacked.clone()
-            source = class_logits_prev[:, label_sources].clone()
-            target = class_logits[:, label_targets].clone()
-            class_logits_stacked[:, label_targets] = source + target
-
-            box_regression_prev = box_regression_stacked.clone()
-            map_ids_src = self.get_map_inds(label_targets)
-            map_ids_tgt = self.get_map_inds(label_sources)
-            source_box = box_regression_prev[:, map_ids_src].clone()
-            target_box = box_regression[:, map_ids_tgt].clone()
-            box_regression_stacked[:, map_ids_tgt] = source_box + target_box
-            
-        class_logits = class_logits_stacked
-        box_regression = box_regression_stacked
-
-        class_logits = class_logits[:, :1231]
-        box_regression = box_regression[:, :1231*4]
         if not self.training:
             result = self.post_processor((class_logits, box_regression), proposals)
             return x, result, {}
@@ -98,7 +76,7 @@ class ROIBoxHead(torch.nn.Module):
         return (
             x,
             proposals,
-            dict(loss_classifier=loss_classifier,loss_box_reg=loss_box_reg)
+            dict(loss_classifier=loss_classifier, loss_box_reg=loss_box_reg)
         )
 
 
