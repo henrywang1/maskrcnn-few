@@ -228,13 +228,15 @@ class FastRCNNLossComputation(object):
         )
 
         one_hot_labels = cat([proposal.get_field("one_hot_labels") for proposal in proposals], dim=0)
-        classification_loss = F.binary_cross_entropy_with_logits(class_logits, one_hot_labels)
-        #classification_loss = F.cross_entropy(class_logits, labels)
 
+        sampled_pos_inds_subset = torch.nonzero(labels > 0).squeeze(1)
+        classification_loss = F.cross_entropy(class_logits, labels)
+        classification_loss_multi = F.binary_cross_entropy_with_logits(
+            class_logits[sampled_pos_inds_subset], one_hot_labels[sampled_pos_inds_subset])
+        classification_loss = classification_loss + classification_loss_multi
         # get indices that correspond to the regression targets for
         # the corresponding ground truth labels, to be used with
-        # advanced indexing
-        sampled_pos_inds_subset = torch.nonzero(labels > 0).squeeze(1)
+        # advanced indexing  
         labels_pos = labels[sampled_pos_inds_subset]
         if self.cls_agnostic_bbox_reg:
             map_inds = torch.tensor([4, 5, 6, 7], device=device)
