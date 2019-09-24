@@ -114,7 +114,7 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
             for img_id in self.ids:
                 ann_ids = self.coco.getAnnIds(imgIds=img_id, iscrowd=None)
                 anno = self.coco.loadAnns(ann_ids)
-                if len(anno)<350 and has_valid_annotation(anno):
+                if len(anno) < 300 and has_valid_annotation(anno):
                     ids.append(img_id)
                     if self.is_train:
                         img_cids = list(set(ann["category_id"] for ann in anno))
