@@ -34,7 +34,7 @@ class ROIBoxHead(torch.nn.Module):
             cfg, self.feature_extractor.out_channels)
         self.post_processor = make_roi_box_post_processor(cfg)
         self.loss_evaluator = make_roi_box_loss_evaluator(cfg)
-        self.mlp = MLP(1024, 768, 1024)
+        self.mlp = make_fc(1024, 768)
     def cosine_distance(self, a, b):
         n = a.shape[0]
         m = b.shape[0]
@@ -71,8 +71,7 @@ class ROIBoxHead(torch.nn.Module):
         # extract features that will be fed to the final classifier. The
         # feature_extractor generally corresponds to the pooler + heads
         x = self.feature_extractor(features, proposals)
-        sentence_embedding = self.mlp(x)
-        x = torch.cat([x, sentence_embedding], 1)
+        sentence_embedding = F.relu(self.mlp(x))
         # final classifier that converts the features into predictions
         class_logits, box_regression = self.predictor(x)
         if not self.training:
