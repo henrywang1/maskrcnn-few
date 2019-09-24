@@ -37,10 +37,10 @@ class FPNPredictor(nn.Module):
         super(FPNPredictor, self).__init__()
         num_classes = cfg.MODEL.ROI_BOX_HEAD.NUM_CLASSES
         representation_size = in_channels
-
-        self.cls_score = nn.Linear(representation_size, num_classes)
+        num_sentence = 768
+        self.cls_score = nn.Linear(representation_size + num_sentence, num_classes)
         num_bbox_reg_classes = 2 if cfg.MODEL.CLS_AGNOSTIC_BBOX_REG else num_classes
-        self.bbox_pred = nn.Linear(representation_size, num_bbox_reg_classes * 4)
+        self.bbox_pred = nn.Linear(representation_size + num_sentence, num_bbox_reg_classes * 4)
 
         nn.init.normal_(self.cls_score.weight, std=0.01)
         nn.init.normal_(self.bbox_pred.weight, std=0.001)
