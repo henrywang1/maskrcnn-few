@@ -8,7 +8,7 @@ import torch.distributed as dist
 
 from maskrcnn_benchmark.utils.comm import get_world_size
 from maskrcnn_benchmark.utils.metric_logger import MetricLogger
-
+from maskrcnn_benchmark.utils.comm import is_main_process
 from apex import amp
 
 def reduce_loss_dict(loss_dict):
@@ -62,8 +62,9 @@ def do_train(
         data_time = time.time() - end
         iteration = iteration + 1
         arguments["iteration"] = iteration
-
-        
+        if iteration % 5 == 0:
+            if get_world_size() > 1:
+                data_loader.batch_sampler.set_oversampling()
 
         images = images.to(device)
         targets = [target.to(device) for target in targets]

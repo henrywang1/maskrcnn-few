@@ -12,6 +12,7 @@ class IterationBasedBatchSampler(BatchSampler):
         self.batch_sampler = batch_sampler
         self.num_iterations = num_iterations
         self.start_iter = start_iter
+        self.is_break = False
 
     def __iter__(self):
         iteration = self.start_iter
@@ -25,7 +26,14 @@ class IterationBasedBatchSampler(BatchSampler):
                 iteration += 1
                 if iteration > self.num_iterations:
                     break
+                if self.is_break:
+                    self.is_break = False
+                    break
                 yield batch
+
+    def set_oversampling(self):
+        self.batch_sampler.sampler.set_oversampling()
+        self.is_break = True
 
     def __len__(self):
         return self.num_iterations

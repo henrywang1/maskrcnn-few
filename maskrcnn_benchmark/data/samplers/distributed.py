@@ -5,7 +5,7 @@ import math
 import torch
 import torch.distributed as dist
 from torch.utils.data.sampler import Sampler
-
+from maskrcnn_benchmark.utils.comm import is_main_process
 
 class DistributedSampler(Sampler):
     """Sampler that restricts data loading to a subset of the dataset.
@@ -38,10 +38,9 @@ class DistributedSampler(Sampler):
         self.num_samples = int(math.ceil(len(self.dataset) * 1.0 / self.num_replicas))
         self.total_size = self.num_samples * self.num_replicas
         self.shuffle = shuffle
-        self.oversampling = dataset.is_train
+        self.oversampling = False
         if self.dataset.is_train:
-            self.img_repeat_factor = dataset.img_repeat_factor
-            self.weights = [v for k, v in self.img_repeat_factor.items()]
+            self.weights = [v for k, v in dataset.img_repeat_factor.items()]
 
     def __iter__(self):
         if self.shuffle:
@@ -63,7 +62,6 @@ class DistributedSampler(Sampler):
         offset = self.num_samples * self.rank
         indices = indices[offset : offset + self.num_samples]
         assert len(indices) == self.num_samples
-
         return iter(indices)
 
     def __len__(self):
@@ -71,3 +69,6 @@ class DistributedSampler(Sampler):
 
     def set_epoch(self, epoch):
         self.epoch = epoch
+
+    def set_oversampling(self):
+        self.oversampling = True

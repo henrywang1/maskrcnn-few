@@ -12,6 +12,35 @@ from maskrcnn_benchmark.modeling.balanced_positive_negative_sampler import (
 from maskrcnn_benchmark.modeling.utils import cat
 import numpy as np
 
+from torch.nn import Module
+class LDAMLoss(Module):
+    """
+    LDAMLoss
+    """
+    def __init__(self, weight=None, s=30):
+        super(LDAMLoss, self).__init__()
+        assert s > 0
+        self.s = s
+        self.weight = weight
+
+    def set_cls_num(self, cls_num_list, max_m=0.5):
+        m_list = 1.0 / np.sqrt(np.sqrt(cls_num_list))
+        m_list = m_list * (max_m / np.max(m_list))
+        m_list = torch.cuda.FloatTensor(m_list)
+        self.m_list = m_list
+
+    def forward(self, x, target):
+        index = torch.zeros_like(x, dtype=torch.uint8)
+        index.scatter_(1, target.data.view(-1, 1), 1)
+        
+        index_float = index.type(torch.cuda.FloatTensor)
+        batch_m = torch.matmul(self.m_list[None, :], index_float.transpose(0,1))
+        batch_m = batch_m.view((-1, 1))
+        x_m = x - batch_m
+    
+        output = torch.where(index, x_m, x)
+        return F.cross_entropy(self.s*output, target, weight=self.weight)
+
 class FastRCNNLossComputation(object):
     """
     Computes the loss for Faster R-CNN.
@@ -35,9 +64,17 @@ class FastRCNNLossComputation(object):
         self.fg_bg_sampler = fg_bg_sampler
         self.box_coder = box_coder
         self.cls_agnostic_bbox_reg = cls_agnostic_bbox_reg
-        with open("sentence.npy", "rb") as f:
-            self.pretrain_sentence = np.load(f)
-            self.pretrain_sentence = torch.tensor(self.pretrain_sentence).cuda()
+        use_ladm_loss = True
+        if use_ladm_loss:
+            self.criteria = LDAMLoss()
+        else:
+            self.criteria = F.cross_entropy
+        # with open("sentence.npy", "rb") as f:
+        #     self.pretrain_sentence = np.load(f)
+        #     self.pretrain_sentence = torch.tensor(self.pretrain_sentence).cuda()
+
+    def set_cls_num(self, cls_num_list):
+        self.criteria.set_cls_num(cls_num_list)
 
     def match_targets_to_proposals(self, proposal, target):
         match_quality_matrix = boxlist_iou(target, proposal)
@@ -118,7 +155,7 @@ class FastRCNNLossComputation(object):
         self._proposals = proposals
         return proposals
 
-    def __call__(self, class_logits, box_regression, sentence_embedding):
+    def __call__(self, class_logits, box_regression):
         """
         Computes the loss for Faster R-CNN.
         This requires that the subsample method has been called beforehand.
@@ -133,7 +170,7 @@ class FastRCNNLossComputation(object):
         """
         class_logits = cat(class_logits, dim=0)
         box_regression = cat(box_regression, dim=0)
-        sentence_embedding = cat(sentence_embedding, dim=0)
+        # sentence_embedding = cat(sentence_embedding, dim=0)
         device = class_logits.device
 
         if not hasattr(self, "_proposals"):
@@ -146,7 +183,7 @@ class FastRCNNLossComputation(object):
             [proposal.get_field("regression_targets") for proposal in proposals], dim=0
         )
 
-        classification_loss = F.cross_entropy(class_logits, labels)
+        classification_loss = self.criteria(class_logits, labels)
 
         # get indices that correspond to the regression targets for
         # the corresponding ground truth labels, to be used with
@@ -166,12 +203,12 @@ class FastRCNNLossComputation(object):
             beta=1,
         )
         box_loss = box_loss / labels.numel()
-        target_sentence_embedding = self.pretrain_sentence[labels_pos-1]
-        sentence_loss = F.mse_loss(
-            sentence_embedding[sampled_pos_inds_subset], target_sentence_embedding)
+        # target_sentence_embedding = self.pretrain_sentence[labels_pos-1]
+        # sentence_loss = F.mse_loss(
+        #     sentence_embedding[sampled_pos_inds_subset], target_sentence_embedding)
 
 
-        return classification_loss, box_loss, sentence_loss
+        return classification_loss, box_loss # sentence_loss
 
 
 def make_roi_box_loss_evaluator(cfg):

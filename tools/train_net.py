@@ -95,6 +95,8 @@ def train(cfg, local_rank, distributed):
         start_iter=arguments["iteration"],
     )
 
+    _model = model if not distributed else model.module
+    _model.roi_heads.box.loss_evaluator.set_cls_num(data_loader.dataset.cls_num_list)
     checkpoint_period = cfg.SOLVER.CHECKPOINT_PERIOD
 
     do_train(

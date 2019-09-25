@@ -122,6 +122,9 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
                         for c in img_cids:
                             class_fractions[c] += 1
 
+            #set the number of background as the max class number for LDAM
+            self.cls_num_list = [c for c in class_fractions.values()]
+            self.cls_num_list += [max(self.cls_num_list)]
             self.ids = ids
             if self.is_train:
                 for k, v in class_fractions.items():
