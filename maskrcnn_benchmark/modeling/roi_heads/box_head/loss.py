@@ -25,6 +25,7 @@ class LDAMLoss(Module):
 
     def set_cls_num(self, cls_num_list, max_m=0.5):
         m_list = 1.0 / np.sqrt(np.sqrt(cls_num_list))
+        m_list[0][0] = 0
         m_list = m_list * (max_m / np.max(m_list))
         m_list = torch.cuda.FloatTensor(m_list)
         self.m_list = m_list

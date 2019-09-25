@@ -62,7 +62,7 @@ def do_train(
         data_time = time.time() - end
         iteration = iteration + 1
         arguments["iteration"] = iteration
-        if iteration % 5 == 0:
+        if scheduler.milestones and iteration == (scheduler.milestones[0]-1):
             if get_world_size() > 1:
                 data_loader.batch_sampler.set_oversampling()
 
