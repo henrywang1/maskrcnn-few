@@ -38,7 +38,7 @@ class DistributedSampler(Sampler):
         self.num_samples = int(math.ceil(len(self.dataset) * 1.0 / self.num_replicas))
         self.total_size = self.num_samples * self.num_replicas
         self.shuffle = shuffle
-        self.oversampling = False
+        self.oversampling = True
         if self.dataset.is_train:
             self.weights = [v for k, v in dataset.img_repeat_factor.items()]
 

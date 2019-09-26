@@ -62,9 +62,9 @@ def do_train(
         data_time = time.time() - end
         iteration = iteration + 1
         arguments["iteration"] = iteration
-        if scheduler.milestones and iteration == (scheduler.milestones[0]-1):
-            if get_world_size() > 1:
-                data_loader.batch_sampler.set_oversampling()
+        #if scheduler.milestones and iteration == (scheduler.milestones[0]-1):
+        #    if get_world_size() > 1:
+        #        data_loader.batch_sampler.set_oversampling()
 
         images = images.to(device)
         targets = [target.to(device) for target in targets]
