@@ -65,7 +65,7 @@ class FastRCNNLossComputation(object):
         self.fg_bg_sampler = fg_bg_sampler
         self.box_coder = box_coder
         self.cls_agnostic_bbox_reg = cls_agnostic_bbox_reg
-        use_ladm_loss = True
+        self.use_ladm_loss = False
         if use_ladm_loss:
             self.criteria = LDAMLoss()
         else:
@@ -75,7 +75,8 @@ class FastRCNNLossComputation(object):
         #     self.pretrain_sentence = torch.tensor(self.pretrain_sentence).cuda()
 
     def set_cls_num(self, cls_num_list):
-        self.criteria.set_cls_num(cls_num_list)
+        if self.use_ladm_loss:
+            self.criteria.set_cls_num(cls_num_list)
 
     def match_targets_to_proposals(self, proposal, target):
         match_quality_matrix = boxlist_iou(target, proposal)
