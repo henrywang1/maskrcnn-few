@@ -65,8 +65,9 @@ class FastRCNNLossComputation(object):
         self.fg_bg_sampler = fg_bg_sampler
         self.box_coder = box_coder
         self.cls_agnostic_bbox_reg = cls_agnostic_bbox_reg
+        # ToDo: use config
         self.use_ladm_loss = False
-        if use_ladm_loss:
+        if self.use_ladm_loss:
             self.criteria = LDAMLoss()
         else:
             self.criteria = F.cross_entropy
