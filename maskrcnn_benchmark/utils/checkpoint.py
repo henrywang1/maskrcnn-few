@@ -60,7 +60,7 @@ class Checkpointer(object):
         self.logger.info("Loading checkpoint from {}".format(f))
         checkpoint = self._load_file(f)
         self._load_model(checkpoint, load_roi=load_roi)
-        if load_roi and not load_opt:
+        if load_roi and load_opt:
             if "optimizer" in checkpoint and self.optimizer:
                 self.logger.info("Loading optimizer from {}".format(f))
                 self.optimizer.load_state_dict(checkpoint.pop("optimizer"))
