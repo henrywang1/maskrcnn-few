@@ -65,9 +65,10 @@ def train(cfg, local_rank, distributed):
         cfg, model, optimizer, scheduler, output_dir, save_to_disk
     )
     load_roi = cfg.SOLVER.CHECKPOINT_LOAD_ROI
+    load_opt = cfg.SOLVER.CHECKPOINT_LOAD_OPT
     use_transfer = cfg.SOLVER.USE_TRANSFER
     extra_checkpoint_data = checkpointer.load(
-        cfg.MODEL.WEIGHT, load_roi=load_roi, use_transfer=use_transfer)
+        cfg.MODEL.WEIGHT, load_roi=load_roi, load_opt=load_opt)
 
     # ['optimizer', 'scheduler', 'iteration']
     if load_roi:
