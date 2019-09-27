@@ -129,12 +129,18 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
                 for k, v in class_fractions.items():
                     class_fractions[k] = v/len(ids)
                 self.img_repeat_factor = {i: 0.0 for i in self.ids}
+                self.img_repeat_factor_u = {i: 0.0 for i in self.ids}
                 for img_id in self.ids:
                     all_class_fractions = [class_fractions[i] for i in img_cls[img_id]]
                     all_repeat_factor = [math.sqrt(0.001/fc) for fc in all_class_fractions]
                     repeat_factor = max(all_repeat_factor)
                     repeat_factor = max(1, repeat_factor)
                     self.img_repeat_factor[img_id] = repeat_factor
+
+                    all_repeat_factor_u = [0.001/fc for fc in all_class_fractions]
+                    repeat_factor_u = max(all_repeat_factor_u)
+                    repeat_factor_u = max(1, repeat_factor_u)
+                    self.img_repeat_factor_u[img_id] = repeat_factor_u
 
         self.img_to_id_map = {k: v for v, k in enumerate(self.ids)}
         self.categories = {cat['id']: cat['name'] for cat in self.coco.cats.values()}

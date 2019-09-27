@@ -17,13 +17,13 @@ class LDAMLoss(Module):
     """
     LDAMLoss
     """
-    def __init__(self, weight=None, s=30):
+    def __init__(self, weight=None, s=1):
         super(LDAMLoss, self).__init__()
         assert s > 0
         self.s = s
         self.weight = weight
 
-    def set_cls_num(self, cls_num_list, max_m=0.1):
+    def set_cls_num(self, cls_num_list, max_m=0.05):
         m_list = 1.0 / np.sqrt(np.sqrt(cls_num_list))
         m_list[0][0] = 0
         m_list = m_list * (max_m / np.max(m_list))
@@ -66,7 +66,7 @@ class FastRCNNLossComputation(object):
         self.box_coder = box_coder
         self.cls_agnostic_bbox_reg = cls_agnostic_bbox_reg
         # ToDo: use config
-        self.use_ladm_loss = True
+        self.use_ladm_loss = False
         if self.use_ladm_loss:
             self.criteria = LDAMLoss()
         else:

@@ -65,38 +65,44 @@ def train(cfg, local_rank, distributed):
         cfg, model, optimizer, scheduler, output_dir, save_to_disk
     )
     load_roi = cfg.SOLVER.CHECKPOINT_LOAD_ROI
-    extra_checkpoint_data = checkpointer.load(cfg.MODEL.WEIGHT, load_roi=load_roi)
+    use_transfer = cfg.SOLVER.USE_TRANSFER
+    extra_checkpoint_data = checkpointer.load(
+        cfg.MODEL.WEIGHT, load_roi=load_roi, use_transfer=use_transfer)
 
     # ['optimizer', 'scheduler', 'iteration']
     if load_roi:
         arguments.update(extra_checkpoint_data)
-
-    # if use_transfer:
-    #     _model = model
-    #     if distributed:
-    #         model = model.module
-    #     for param in model.parameters():
-    #         param.requires_grad = False
-
-    #     for param in model.roi_heads.box.transfer_fc_cls.parameters():
-    #         param.requires_grad = True
-
-    #     for param in model.roi_heads.box.transfer_fc_box.parameters():
-    #         param.requires_grad = True
-
-    #     for param in model.roi_heads.box.transfer_fc_hidden.parameters():
-    #         param.requires_grad = True
-
-
     data_loader = make_data_loader(
         cfg,
         is_train=True,
         is_distributed=distributed,
         start_iter=arguments["iteration"],
     )
-
     _model = model if not distributed else model.module
     _model.roi_heads.box.loss_evaluator.set_cls_num(data_loader.dataset.cls_num_list)
+    if use_transfer:
+        _model.roi_heads.box.set_label_set(data_loader.dataset.label_set)
+        for param in model.parameters():
+            param.requires_grad = False
+
+        for param in _model.roi_heads.box.transfer_mlp.parameters():
+            param.requires_grad = True
+
+        for param in _model.roi_heads.box.transfer_fc_cls.parameters():
+            param.requires_grad = True
+
+        for param in _model.roi_heads.box.transfer_fc_box.parameters():
+            param.requires_grad = True
+
+        # for param in _model.roi_heads.box.feature_extractor.parameters():
+        #     param.requires_grad = True
+
+        # for param in _model.roi_heads.box.predictor.parameters():
+        #     param.requires_grad = True
+
+        if distributed:
+            data_loader.batch_sampler.set_uniform_sampling()
+
     checkpoint_period = cfg.SOLVER.CHECKPOINT_PERIOD
 
     do_train(

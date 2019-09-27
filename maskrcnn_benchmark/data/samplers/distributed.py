@@ -38,17 +38,20 @@ class DistributedSampler(Sampler):
         self.num_samples = int(math.ceil(len(self.dataset) * 1.0 / self.num_replicas))
         self.total_size = self.num_samples * self.num_replicas
         self.shuffle = shuffle
-        self.oversampling = True
+        self.over_sampling = True
         if self.dataset.is_train:
             self.weights = [v for k, v in dataset.img_repeat_factor.items()]
+            self.weights_uniform = [v for k, v in dataset.img_repeat_factor_u.items()]
 
     def __iter__(self):
         if self.shuffle:
             # deterministically shuffle based on epoch
             g = torch.Generator()
             g.manual_seed(self.epoch)
-            if self.oversampling:
+            if self.over_sampling:
                 indices = torch.multinomial(torch.tensor(self.weights), len(self.dataset), True).tolist()
+            elif self.uniform_sampling:
+                indices = torch.multinomial(torch.tensor(self.weights_uniform), len(self.dataset), True).tolist()
             else:
                 indices = torch.randperm(len(self.dataset), generator=g).tolist()
         else:
@@ -70,5 +73,9 @@ class DistributedSampler(Sampler):
     def set_epoch(self, epoch):
         self.epoch = epoch
 
-    def set_oversampling(self):
-        self.oversampling = True
+    def set_over_sampling(self):
+        self.over_sampling = True
+
+    def set_uniform_sampling(self):
+        self.uniform_sampling = True
+        self.over_sampling = False
