@@ -35,14 +35,14 @@ class ROIBoxHead(torch.nn.Module):
         self.post_processor = make_roi_box_post_processor(cfg)
         self.loss_evaluator = make_roi_box_loss_evaluator(cfg)
         self.use_transfer = False
-        self.transfer_mlp = make_fc(1024 + 315*5, 1024) #MLP(1024 + 315*5, 1024, 1024, n_blk=2)
+        self.transfer_mlp = make_fc(1024 + 776*5, 1024) #MLP(1024 + 315*5, 1024, 1024, n_blk=2)
         self.transfer_fc_cls = make_fc(1024, 915)
         self.transfer_fc_box = make_fc(1024, 915*4)
 
     def set_label_set(self, label_set):
         self.use_transfer = True
         self.label_set = label_set
-        self.source_labels = label_set["cat_f"]
+        self.source_labels = label_set["cat_f"] + label_set["cat_c"]
         self.target_labels = label_set["cat_c"] + label_set["cat_r"]
 
     def cosine_distance(self, a, b):
@@ -90,6 +90,7 @@ class ROIBoxHead(torch.nn.Module):
             map_inds = map_inds.to(box_regression.device).view(-1)
             box_soucre = box_regression[:, map_inds]
             x = self.transfer_mlp(torch.cat([x, cls_source, box_soucre], 1))
+            x = F.relu(x)
             class_logits[:, self.target_labels] = self.transfer_fc_cls(x)
 
             map_inds_target = 4 * torch.tensor(self.target_labels)[:, None] + torch.tensor([0, 1, 2, 3])
