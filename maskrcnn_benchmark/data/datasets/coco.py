@@ -14,8 +14,8 @@ import pickle
 # RuntimeError: unable to open shared memory object XXXX in read-write mode
 # OSError: [Errno 24] Too many open files
 
-# import torch.multiprocessing as mp
-# mp.set_sharing_strategy('file_system')
+import torch.multiprocessing as mp
+mp.set_sharing_strategy('file_system')
 
 min_keypoints_per_image = 10
 
@@ -189,15 +189,15 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         # target.add_field("labels_2", torch.tensor(classes_2))
         # target.add_field("labels_3", torch.tensor(classes_3))
 
-        if anno and "segmentation" in anno[0]:
-            masks = [obj["segmentation"] for obj in anno]
-            masks = SegmentationMask(masks, img.size, mode='poly')
-            target.add_field("masks", masks)
+        # if anno and "segmentation" in anno[0]:
+        #     masks = [obj["segmentation"] for obj in anno]
+        #     masks = SegmentationMask(masks, img.size, mode='poly')
+        #     target.add_field("masks", masks)
 
-        if anno and "keypoints" in anno[0]:
-            keypoints = [obj["keypoints"] for obj in anno]
-            keypoints = PersonKeypoints(keypoints, img.size)
-            target.add_field("keypoints", keypoints)
+        # if anno and "keypoints" in anno[0]:
+        #     keypoints = [obj["keypoints"] for obj in anno]
+        #     keypoints = PersonKeypoints(keypoints, img.size)
+        #     target.add_field("keypoints", keypoints)
 
         target = target.clip_to_image(remove_empty=True)
 
