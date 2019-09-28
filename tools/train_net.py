@@ -82,18 +82,18 @@ def train(cfg, local_rank, distributed):
     _model = model if not distributed else model.module
     _model.roi_heads.box.loss_evaluator.set_cls_num(data_loader.dataset.cls_num_list)
     if use_transfer:
-        _model.roi_heads.box.set_label_set(data_loader.dataset.label_set)
-        for param in model.parameters():
-            param.requires_grad = False
+        # _model.roi_heads.box.set_label_set(data_loader.dataset.label_set)
+        # for param in model.parameters():
+        #     param.requires_grad = False
 
-        for param in _model.roi_heads.box.transfer_mlp.parameters():
-            param.requires_grad = True
+        # for param in _model.roi_heads.box.transfer_mlp.parameters():
+        #     param.requires_grad = True
 
-        for param in _model.roi_heads.box.transfer_fc_cls.parameters():
-            param.requires_grad = True
+        # for param in _model.roi_heads.box.transfer_fc_cls.parameters():
+        #     param.requires_grad = True
 
-        for param in _model.roi_heads.box.transfer_fc_box.parameters():
-            param.requires_grad = True
+        # for param in _model.roi_heads.box.transfer_fc_box.parameters():
+        #     param.requires_grad = True
 
         # for param in _model.roi_heads.box.feature_extractor.parameters():
         #     param.requires_grad = True

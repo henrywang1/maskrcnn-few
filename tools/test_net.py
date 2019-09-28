@@ -95,9 +95,9 @@ def main():
             mkdir(output_folder)
             output_folders[idx] = output_folder
     data_loaders_val = make_data_loader(cfg, is_train=False, is_distributed=distributed)
-    if use_transfer:
+    #if use_transfer:
         #_model = model if not distributed else model.module
-        model.roi_heads.box.set_label_set(data_loaders_val[0].dataset.label_set)
+    #    model.roi_heads.box.set_label_set(data_loaders_val[0].dataset.label_set)
     for output_folder, dataset_name, data_loader_val in zip(output_folders, dataset_names, data_loaders_val):
         inference(
             model,
