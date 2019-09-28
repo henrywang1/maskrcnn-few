@@ -17,7 +17,7 @@ class LDAMLoss(Module):
     """
     LDAMLoss
     """
-    def __init__(self, weight=None, s=1):
+    def __init__(self, weight=None, s=2.0):
         super(LDAMLoss, self).__init__()
         assert s > 0
         self.s = s
@@ -68,8 +68,8 @@ class FastRCNNLossComputation(object):
         self.cls_agnostic_bbox_reg = cls_agnostic_bbox_reg
         # ToDo: use config
         self.use_ladm_loss = use_ladm_loss
-        if self.use_ladm_loss:
-            self.criteria = LDAMLoss()
+        if self.use_ladm_loss > 0:
+            self.criteria = LDAMLoss(s=use_ladm_loss)
         else:
             self.criteria = F.cross_entropy
         # with open("sentence.npy", "rb") as f:
