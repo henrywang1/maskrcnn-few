@@ -39,11 +39,11 @@ class ROIBoxHead(torch.nn.Module):
         # self.transfer_fc_cls = make_fc(1024, 915)
         # self.transfer_fc_box = make_fc(1024, 915*4)
 
-    def set_label_set(self, label_set):
-        self.use_transfer = True
-        self.label_set = label_set
-        self.source_labels = label_set["cat_f"] + label_set["cat_c"]
-        self.target_labels = label_set["cat_c"] + label_set["cat_r"]
+    # def set_label_set(self, label_set):
+    #     self.use_transfer = True
+    #     self.label_set = label_set
+    #     self.source_labels = label_set["cat_f"] + label_set["cat_c"]
+    #     self.target_labels = label_set["cat_c"] + label_set["cat_r"]
 
     def cosine_distance(self, a, b):
         n = a.shape[0]

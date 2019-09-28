@@ -23,7 +23,7 @@ class LDAMLoss(Module):
         self.s = s
         self.weight = weight
 
-    def set_cls_num(self, cls_num_list, max_m=0.05):
+    def set_cls_num(self, cls_num_list, max_m=0.5):
         m_list = 1.0 / np.sqrt(np.sqrt(cls_num_list))
         m_list[0][0] = 0
         m_list = m_list * (max_m / np.max(m_list))
@@ -53,7 +53,8 @@ class FastRCNNLossComputation(object):
         proposal_matcher,
         fg_bg_sampler,
         box_coder,
-        cls_agnostic_bbox_reg=False
+        cls_agnostic_bbox_reg=False,
+        use_ladm_loss=False
     ):
         """
         Arguments:
@@ -66,7 +67,7 @@ class FastRCNNLossComputation(object):
         self.box_coder = box_coder
         self.cls_agnostic_bbox_reg = cls_agnostic_bbox_reg
         # ToDo: use config
-        self.use_ladm_loss = False
+        self.use_ladm_loss = use_ladm_loss
         if self.use_ladm_loss:
             self.criteria = LDAMLoss()
         else:
@@ -230,11 +231,13 @@ def make_roi_box_loss_evaluator(cfg):
 
     cls_agnostic_bbox_reg = cfg.MODEL.CLS_AGNOSTIC_BBOX_REG
 
+    use_ladm_loss = cfg.MODEL.ROI_BOX_HEAD.USE_LDAM_LOSS
     loss_evaluator = FastRCNNLossComputation(
         matcher,
         fg_bg_sampler,
         box_coder,
-        cls_agnostic_bbox_reg
+        cls_agnostic_bbox_reg,
+        use_ladm_loss
     )
 
     return loss_evaluator

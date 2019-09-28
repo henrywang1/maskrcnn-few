@@ -14,8 +14,8 @@ import pickle
 # RuntimeError: unable to open shared memory object XXXX in read-write mode
 # OSError: [Errno 24] Too many open files
 
-import torch.multiprocessing as mp
-mp.set_sharing_strategy('file_system')
+# import torch.multiprocessing as mp
+# mp.set_sharing_strategy('file_system')
 
 min_keypoints_per_image = 10
 
@@ -57,25 +57,25 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
             ann_path = ann_file[:ann_file.rfind("/")+1]
             label_set_file = ann_path + "label_set.json"
             self.cids = [*range(1,1231)]
-            if not os.path.isfile(label_set_file) and is_main_process():
-                with open(ann_file) as f_in:
-                    anns = json.load(f_in)
-                    cat_f = []
-                    cat_c = []
-                    cat_r = []
-                    for a in anns["categories"]:
-                        if a["frequency"] == "f":
-                            cat_f.append(a["id"])
-                        if a["frequency"] == "c":
-                            cat_c.append(a["id"])
-                        if a["frequency"] == "r":
-                            cat_r.append(a["id"])
-                    self.label_set = {"cat_f":cat_f, "cat_c":cat_c, "cat_r":cat_r}
-                    with open(label_set_file, 'w') as f:
-                        json.dump(self.label_set, f, indent=2)
-            synchronize()
-            with open(label_set_file, 'r') as f:
-                self.label_set = json.load(f)
+            # if not os.path.isfile(label_set_file) and is_main_process():
+            #     with open(ann_file) as f_in:
+            #         anns = json.load(f_in)
+            #         cat_f = []
+            #         cat_c = []
+            #         cat_r = []
+            #         for a in anns["categories"]:
+            #             if a["frequency"] == "f":
+            #                 cat_f.append(a["id"])
+            #             if a["frequency"] == "c":
+            #                 cat_c.append(a["id"])
+            #             if a["frequency"] == "r":
+            #                 cat_r.append(a["id"])
+            #         self.label_set = {"cat_f":cat_f, "cat_c":cat_c, "cat_r":cat_r}
+            #         with open(label_set_file, 'w') as f:
+            #             json.dump(self.label_set, f, indent=2)
+            # synchronize()
+            # with open(label_set_file, 'r') as f:
+            #     self.label_set = json.load(f)
             if "train" in ann_file:
                 self.is_train = True
             else:
@@ -153,12 +153,12 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         }
         self.id_to_img_map = {k: v for k, v in enumerate(self.ids)}
         self._transforms = transforms
-        with open("relation.pickle", "rb") as f:
-            relation = pickle.load(f)
-            self.label_table_0 = relation['label_tables'][0]
-            self.label_table_1 = relation['label_tables'][1]
-            self.label_table_2 = relation['label_tables'][2]
-            self.label_table_3 = relation['label_tables'][3]
+        # with open("relation.pickle", "rb") as f:
+        #     relation = pickle.load(f)
+        #     self.label_table_0 = relation['label_tables'][0]
+        #     self.label_table_1 = relation['label_tables'][1]
+        #     self.label_table_2 = relation['label_tables'][2]
+        #     self.label_table_3 = relation['label_tables'][3]
 
     def __getitem__(self, idx):
         img, anno = super(COCODataset, self).__getitem__(idx)
