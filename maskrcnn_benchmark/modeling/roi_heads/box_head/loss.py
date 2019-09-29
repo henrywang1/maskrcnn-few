@@ -68,8 +68,8 @@ class FastRCNNLossComputation(object):
         self.cls_agnostic_bbox_reg = cls_agnostic_bbox_reg
         # ToDo: use config
         self.use_ladm_loss = use_ladm_loss
-        if self.use_ladm_loss > 0:
-            self.criteria = LDAMLoss(s=use_ladm_loss)
+        if self.use_ladm_loss:
+            self.criteria = LDAMLoss()
         else:
             self.criteria = F.cross_entropy
         # with open("sentence.npy", "rb") as f:
