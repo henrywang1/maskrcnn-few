@@ -43,7 +43,7 @@ class DistributedSampler(Sampler):
         if self.dataset.is_train:
             self.weights = [v for k, v in dataset.img_repeat_factor.items()]
             self.weights_uniform = [v for k, v in dataset.img_repeat_factor_u.items()]
-            self.over_sampling = True
+            # self.over_sampling = True
 
     def __iter__(self):
         if self.shuffle:
