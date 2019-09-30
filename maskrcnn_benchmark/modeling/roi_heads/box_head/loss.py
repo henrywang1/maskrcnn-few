@@ -17,7 +17,7 @@ class LDAMLoss(Module):
     """
     LDAMLoss
     """
-    def __init__(self, weight=None, s=2.0):
+    def __init__(self, weight=None, s=1.0):
         super(LDAMLoss, self).__init__()
         assert s > 0
         self.s = s
