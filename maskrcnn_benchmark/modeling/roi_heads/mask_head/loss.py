@@ -111,7 +111,9 @@ class MaskRCNNLossComputation(object):
         """
         labels, mask_targets = self.prepare_targets(proposals, targets)
 
-        labels = cat(labels, dim=0)
+        # labels = cat(labels, dim=0)
+        labels = cat([p.get_field("proto_labels") for p in proposals])
+        labels = (labels > 0).long()
         mask_targets = cat(mask_targets, dim=0)
 
         positive_inds = torch.nonzero(labels > 0).squeeze(1)
@@ -123,7 +125,7 @@ class MaskRCNNLossComputation(object):
             return mask_logits.sum() * 0
 
         mask_loss = F.binary_cross_entropy_with_logits(
-            mask_logits[positive_inds, labels_pos], mask_targets
+            mask_logits[positive_inds, labels_pos], mask_targets[positive_inds]
         )
         return mask_loss
 

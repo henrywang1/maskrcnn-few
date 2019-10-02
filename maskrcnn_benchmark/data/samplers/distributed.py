@@ -38,13 +38,24 @@ class DistributedSampler(Sampler):
         self.num_samples = int(math.ceil(len(self.dataset) * 1.0 / self.num_replicas))
         self.total_size = self.num_samples * self.num_replicas
         self.shuffle = shuffle
+        self.uniform_sampling = False
+
+        if hasattr(dataset, "img_repeat_factor"):
+            self.weights = [v for k, v in dataset.img_repeat_factor.items()]
+            self.uniform_sampling = True
 
     def __iter__(self):
         if self.shuffle:
             # deterministically shuffle based on epoch
             g = torch.Generator()
             g.manual_seed(self.epoch)
-            indices = torch.randperm(len(self.dataset), generator=g).tolist()
+            if self.uniform_sampling:
+                indices = torch.multinomial(torch.tensor(self.weights), len(self.dataset), True).tolist()
+                #from maskrcnn_benchmark.utils.comm import is_main_process
+                #if is_main_process():
+                #    import pdb; pdb.set_trace()
+            else:
+                indices = torch.randperm(len(self.dataset), generator=g).tolist()
         else:
             indices = torch.arange(len(self.dataset)).tolist()
 

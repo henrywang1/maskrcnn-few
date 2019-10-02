@@ -5,6 +5,7 @@ import torchvision
 from maskrcnn_benchmark.structures.bounding_box import BoxList
 from maskrcnn_benchmark.structures.segmentation_mask import SegmentationMask
 from maskrcnn_benchmark.structures.keypoint import PersonKeypoints
+from collections import defaultdict
 
 
 min_keypoints_per_image = 10
@@ -43,6 +44,11 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         super(COCODataset, self).__init__(root, ann_file)
         # sort indices for reproducible results
         self.ids = sorted(self.ids)
+        self.is_train = remove_images_without_annotations
+        # json_category_id class fraction
+        class_fractions = defaultdict(int)
+        self.img_cls = defaultdict(list)
+        self.cls_img = defaultdict(list)
 
         # filter images without detection annotations
         if remove_images_without_annotations:
@@ -52,7 +58,25 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
                 anno = self.coco.loadAnns(ann_ids)
                 if has_valid_annotation(anno):
                     ids.append(img_id)
+                    img_cids = list(set(ann["category_id"] for ann in anno))
+                    assert img_cids
+                    self.img_cls[img_id] = img_cids
+                    for c in img_cids:
+                        class_fractions[c] += 1
+                        self.cls_img[c].append(img_id)
+
             self.ids = ids
+
+            for k, v in class_fractions.items():
+                class_fractions[k] = v/len(ids)
+
+            self.img_repeat_factor = defaultdict(float)
+            for img_id in self.ids:
+                all_class_fractions = [class_fractions[i] for i in self.img_cls[img_id]]
+                repeat_factor = [0.1/fc for fc in all_class_fractions]
+                repeat_factor = max(repeat_factor)
+                repeat_factor = max(1, repeat_factor)
+                self.img_repeat_factor[img_id] = repeat_factor
 
         self.categories = {cat['id']: cat['name'] for cat in self.coco.cats.values()}
 
@@ -63,6 +87,7 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
             v: k for k, v in self.json_category_id_to_contiguous_id.items()
         }
         self.id_to_img_map = {k: v for k, v in enumerate(self.ids)}
+        self.img_to_id_map = {v: k for k, v in enumerate(self.ids)}
         self._transforms = transforms
 
     def __getitem__(self, idx):

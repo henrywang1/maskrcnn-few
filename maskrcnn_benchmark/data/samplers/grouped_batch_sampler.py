@@ -4,6 +4,7 @@ import itertools
 import torch
 from torch.utils.data.sampler import BatchSampler
 from torch.utils.data.sampler import Sampler
+from random import sample
 
 
 class GroupedBatchSampler(BatchSampler):
@@ -69,7 +70,7 @@ class GroupedBatchSampler(BatchSampler):
         # splits each cluster in batch_size, and merge as a list of tensors
         splits = [c.split(self.batch_size) for c in permuted_clusters]
         merged = tuple(itertools.chain.from_iterable(splits))
-
+        
         # now each batch internally has the right order, but
         # they are grouped by clusters. Find the permutation between
         # different batches that brings them as close as possible to
@@ -91,6 +92,83 @@ class GroupedBatchSampler(BatchSampler):
         # finally, permute the batches
         batches = [merged[i].tolist() for i in permutation_order]
 
+        if self.drop_uneven:
+            kept = []
+            for batch in batches:
+                if len(batch) == self.batch_size:
+                    kept.append(batch)
+            batches = kept
+        return batches
+
+    def __iter__(self):
+        if self._can_reuse_batches:
+            batches = self._batches
+            self._can_reuse_batches = False
+        else:
+            batches = self._prepare_batches()
+        self._batches = batches
+        return iter(batches)
+
+    def __len__(self):
+        if not hasattr(self, "_batches"):
+            self._batches = self._prepare_batches()
+            self._can_reuse_batches = True
+        return len(self._batches)
+
+
+class QuerySupportSampler(BatchSampler):
+    """
+    Wraps another sampler to yield a mini-batch of indices.
+    It enforces that elements from the same group should appear in groups of batch_size.
+    It also tries to provide mini-batches which follows an ordering which is
+    as close as possible to the ordering from the original sampler.
+
+    Arguments:
+        sampler (Sampler): Base sampler.
+        batch_size (int): Size of mini-batch.
+        drop_uneven (bool): If ``True``, the sampler will drop the batches whose
+            size is less than ``batch_size``
+
+    """
+
+    def __init__(self, sampler, batch_size, dataset, drop_uneven=False):
+        if not isinstance(sampler, Sampler):
+            raise ValueError(
+                "sampler should be an instance of "
+                "torch.utils.data.Sampler, but got sampler={}".format(sampler)
+            )
+        self.sampler = sampler
+        if batch_size > 1:
+            raise NotImplementedError(
+                "Currently, only 1 query and 1 support on 1 GPU is supported")
+
+        self.batch_size = batch_size
+        self.drop_uneven = drop_uneven        
+        self._can_reuse_batches = False
+        self.dataset = dataset
+
+    def sample_support_images(self, sampled_ids):
+        img_ids = [self.dataset.id_to_img_map[int(i)] for i in sampled_ids]
+        cls_per_img = [self.dataset.img_cls[int(i)] for i in img_ids]
+        sampled_class = [sample(c, 1)[0] for c in cls_per_img]
+        support_imgs = [self.dataset.cls_img[c] for c in sampled_class]
+        support_imgs = [sample(i, 1)[0] for i in support_imgs]
+        support_imgs = [self.dataset.img_to_id_map[i]
+                        for i in support_imgs]
+        support_imgs = torch.tensor(support_imgs)
+        same_img_idx = (support_imgs == sampled_ids)
+        if same_img_idx.sum() > 0:
+            support_imgs[same_img_idx] = self.sample_support_images(
+                sampled_ids[same_img_idx])
+
+        return support_imgs
+
+
+    def _prepare_batches(self):
+        # get the sampled indices from the sampler
+        sampled_ids = torch.as_tensor(list(self.sampler))
+        support_imgs = self.sample_support_images(sampled_ids)
+        batches = [[i,j] for i, j in zip(sampled_ids, support_imgs)]
         if self.drop_uneven:
             kept = []
             for batch in batches:

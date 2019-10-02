@@ -27,7 +27,8 @@ def compute_on_dataset(model, data_loader, device, timer=None):
             if cfg.TEST.BBOX_AUG.ENABLED:
                 output = im_detect_bbox_aug(model, images, device)
             else:
-                output = model(images.to(device))
+                targets = [target.to(device) for target in targets]
+                output = model(images.to(device), targets)
             if timer:
                 if not cfg.MODEL.DEVICE == 'cpu':
                     torch.cuda.synchronize()

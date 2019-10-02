@@ -43,7 +43,7 @@ class ROIMaskHead(torch.nn.Module):
         self.post_processor = make_roi_mask_post_processor(cfg)
         self.loss_evaluator = make_roi_mask_loss_evaluator(cfg)
 
-    def forward(self, features, proposals, targets=None):
+    def forward(self, features, proposals, targets=None, meta_data=None):
         """
         Arguments:
             features (list[Tensor]): feature-maps from possibly several levels
@@ -67,7 +67,7 @@ class ROIMaskHead(torch.nn.Module):
             x = features
             x = x[torch.cat(positive_inds, dim=0)]
         else:
-            x = self.feature_extractor(features, proposals)
+            x = self.feature_extractor(features, proposals, meta_data)
         mask_logits = self.predictor(x)
 
         if not self.training:

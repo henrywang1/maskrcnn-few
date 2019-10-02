@@ -29,6 +29,8 @@ class GeneralizedRCNN(nn.Module):
         self.backbone = build_backbone(cfg)
         self.rpn = build_rpn(cfg, self.backbone.out_channels)
         self.roi_heads = build_roi_heads(cfg, self.backbone.out_channels)
+        self.pooler_box = self.roi_heads.box.feature_extractor.pooler
+        self.pooler_mask = self.roi_heads.mask.feature_extractor.pooler
 
     def forward(self, images, targets=None):
         """
@@ -47,9 +49,23 @@ class GeneralizedRCNN(nn.Module):
             raise ValueError("In training mode, targets should be passed")
         images = to_image_list(images)
         features = self.backbone(images.tensors)
+        rois_box = self.pooler_box(features, targets)
+        rois_mask = self.pooler_mask(features, targets)
+        target_per_img = [len(p) for p in targets]
+        labels = [p.get_field("labels").long() for p in targets]
+        if self.training:
+            rois_box_q, rois_box_s = self.prepare_roi_list(rois_box, target_per_img, labels)
+            rois_mask_q, rois_mask_s = self.prepare_roi_list(rois_mask, target_per_img, labels)
+        else:
+            pass
+        unique_labels = [torch.unique(l, sorted=True) for l in labels]
+        meta_data = {"roi_box": (rois_box_q, rois_box_s),
+                     "roi_mask": (rois_mask_q, rois_mask_s),
+                     "unique_labels": unique_labels
+                     }
         proposals, proposal_losses = self.rpn(images, features, targets)
         if self.roi_heads:
-            x, result, detector_losses = self.roi_heads(features, proposals, targets)
+            x, result, detector_losses = self.roi_heads(features, proposals, targets, meta_data)
         else:
             # RPN-only models don't have roi_heads
             x = features
@@ -63,3 +79,23 @@ class GeneralizedRCNN(nn.Module):
             return losses
 
         return result
+
+    def prepare_roi_list(self, roi, targets_per_img, labels):
+        if self.training:
+            roi_q, roi_s = roi.split(targets_per_img)
+            roi_q = self.calculate_prototype(roi_q, labels[0])
+            roi_s = self.calculate_prototype(roi_s, labels[1])
+            return roi_q, roi_s
+        
+
+    def calculate_prototype(self, features, labels):
+        if not features.numel():
+            return features
+
+        unique_labels = torch.unique(labels)
+        if unique_labels.numel() == 1:
+            return features.mean(0, keepdim=True)
+
+        avg_features = [features[labels == l].mean(0) for l in unique_labels]
+        avg_features = torch.stack(avg_features)
+        return avg_features

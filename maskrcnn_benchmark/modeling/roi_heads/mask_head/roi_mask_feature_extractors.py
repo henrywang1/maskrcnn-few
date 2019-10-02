@@ -1,4 +1,5 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
+import torch
 from torch import nn
 from torch.nn import functional as F
 
@@ -56,8 +57,23 @@ class MaskRCNNFPNFeatureExtractor(nn.Module):
             self.blocks.append(layer_name)
         self.out_channels = layer_features
 
-    def forward(self, x, proposals):
+    def forward(self, x, proposals, meta_data):
         x = self.pooler(x, proposals)
+        roi_q, roi_s = meta_data["roi_mask"]
+        roi_q = F.adaptive_avg_pool2d(roi_q, 1) if roi_q.numel() else roi_q
+        roi_s = F.adaptive_avg_pool2d(roi_s, 1) if roi_s.numel() else roi_s
+        proto_labels = [p.get_field("proto_labels") for p in proposals]
+        
+        if x.numel():
+            proto_labels_q = proto_labels[0] - 1
+            roi_s = roi_s[proto_labels_q]
+            if self.training:
+                proto_labels_s = proto_labels[1] - 1
+                roi_q = roi_q[proto_labels_s]
+                roi = torch.cat([roi_s, roi_q])
+                x = x * roi
+            else:
+                x = x*roi_s
 
         for layer_name in self.blocks:
             x = F.relu(getattr(self, layer_name)(x))

@@ -138,7 +138,9 @@ class FastRCNNLossComputation(object):
 
         proposals = self._proposals
 
-        labels = cat([proposal.get_field("labels") for proposal in proposals], dim=0)
+        # labels = cat([proposal.get_field("labels") for proposal in proposals], dim=0)
+        labels = cat([p.get_field("proto_labels") for p in proposals])
+        labels = (labels > 0).long()
         regression_targets = cat(
             [proposal.get_field("regression_targets") for proposal in proposals], dim=0
         )
@@ -150,12 +152,11 @@ class FastRCNNLossComputation(object):
         # advanced indexing
         sampled_pos_inds_subset = torch.nonzero(labels > 0).squeeze(1)
         labels_pos = labels[sampled_pos_inds_subset]
-        if self.cls_agnostic_bbox_reg:
-            map_inds = torch.tensor([4, 5, 6, 7], device=device)
-        else:
-            map_inds = 4 * labels_pos[:, None] + torch.tensor(
-                [0, 1, 2, 3], device=device)
-
+        #if self.cls_agnostic_bbox_reg:
+        #    map_inds = torch.tensor([4, 5, 6, 7], device=device)
+        #else:
+        map_inds = 4 * labels_pos[:, None] + torch.tensor([0, 1, 2, 3], device=device)
+        
         box_loss = smooth_l1_loss(
             box_regression[sampled_pos_inds_subset[:, None], map_inds],
             regression_targets[sampled_pos_inds_subset],

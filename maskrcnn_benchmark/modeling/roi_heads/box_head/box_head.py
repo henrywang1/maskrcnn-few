@@ -6,6 +6,7 @@ from .roi_box_feature_extractors import make_roi_box_feature_extractor
 from .roi_box_predictors import make_roi_box_predictor
 from .inference import make_roi_box_post_processor
 from .loss import make_roi_box_loss_evaluator
+from maskrcnn_benchmark.modeling.utils import get_encode_label
 
 
 class ROIBoxHead(torch.nn.Module):
@@ -21,7 +22,7 @@ class ROIBoxHead(torch.nn.Module):
         self.post_processor = make_roi_box_post_processor(cfg)
         self.loss_evaluator = make_roi_box_loss_evaluator(cfg)
 
-    def forward(self, features, proposals, targets=None):
+    def forward(self, features, proposals, targets=None, meta_data=None):
         """
         Arguments:
             features (list[Tensor]): feature-maps from possibly several levels
@@ -41,10 +42,16 @@ class ROIBoxHead(torch.nn.Module):
             # positive / negative ratio
             with torch.no_grad():
                 proposals = self.loss_evaluator.subsample(proposals, targets)
+                unique_label_q, unique_label_s = meta_data["unique_labels"]
+                labels_q, labels_s = [p.get_field("labels") for p in proposals]
+                proto_labels_q = get_encode_label(labels_q.long(), unique_label_s)
+                proto_labels_s = get_encode_label(labels_s.long(), unique_label_q)
+                proposals[0].add_field("proto_labels", proto_labels_q)
+                proposals[1].add_field("proto_labels", proto_labels_s)
 
         # extract features that will be fed to the final classifier. The
         # feature_extractor generally corresponds to the pooler + heads
-        x = self.feature_extractor(features, proposals)
+        x = self.feature_extractor(features, proposals, meta_data)
         # final classifier that converts the features into predictions
         class_logits, box_regression = self.predictor(x)
 
