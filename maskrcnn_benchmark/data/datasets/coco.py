@@ -1,11 +1,14 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
+from collections import defaultdict
+import json
+import os
 import torch
 import torchvision
 
 from maskrcnn_benchmark.structures.bounding_box import BoxList
 from maskrcnn_benchmark.structures.segmentation_mask import SegmentationMask
 from maskrcnn_benchmark.structures.keypoint import PersonKeypoints
-from collections import defaultdict
+from maskrcnn_benchmark.utils.comm import is_main_process, synchronize
 
 
 min_keypoints_per_image = 10
@@ -39,12 +42,35 @@ def has_valid_annotation(anno):
 
 class COCODataset(torchvision.datasets.coco.CocoDetection):
     def __init__(
-        self, ann_file, root, remove_images_without_annotations, transforms=None
+        self, ann_file, root, remove_images_without_annotations, transforms=None, split=0
     ):
+        self.is_train = remove_images_without_annotations
+        if split:
+            ann_file_new = ann_file + "_" + str(split)
+            if not os.path.isfile(ann_file_new) and is_main_process():
+                with open(ann_file) as f_in:
+                    anns = json.load(f_in)
+                if split == 5: #voc non-voc
+                    if not self.is_train:
+                        pass
+                    else:
+                        voc_inds = (0, 1, 2, 3, 4, 5, 6, 8, 14, 15, 16, 17, 18, 19, 39, 56, 57, 58, 60, 62)
+                        split_cat = [a["id"] for i, a in enumerate(anns["categories"]) if not i in voc_inds]
+                else:
+                    if not self.is_train:
+                        split_cat = [a["id"] for i, a in enumerate(anns["categories"]) if i % 4 == (split-1)]
+                    else:
+                        split_cat = [a["id"] for i, a in enumerate(anns["categories"]) if not i % 4 == (split-1)]
+                anns["annotations"] = [v for v in anns['annotations'] if v["category_id"] in split_cat]
+                with open(ann_file_new, "w") as f_out:
+                    json.dump(anns, f_out)
+            ann_file = ann_file_new
+        
+        synchronize()
+        print("Use annotation {}".format(ann_file))
         super(COCODataset, self).__init__(root, ann_file)
         # sort indices for reproducible results
         self.ids = sorted(self.ids)
-        self.is_train = remove_images_without_annotations
         # json_category_id class fraction
         class_fractions = defaultdict(int)
         self.img_cls = defaultdict(list)
@@ -111,10 +137,10 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
             masks = SegmentationMask(masks, img.size, mode='poly')
             target.add_field("masks", masks)
 
-        if anno and "keypoints" in anno[0]:
-            keypoints = [obj["keypoints"] for obj in anno]
-            keypoints = PersonKeypoints(keypoints, img.size)
-            target.add_field("keypoints", keypoints)
+        # if anno and "keypoints" in anno[0]:
+        #     keypoints = [obj["keypoints"] for obj in anno]
+        #     keypoints = PersonKeypoints(keypoints, img.size)
+        #     target.add_field("keypoints", keypoints)
 
         target = target.clip_to_image(remove_empty=True)
 

@@ -70,7 +70,7 @@ _C.DATASETS = CN()
 _C.DATASETS.TRAIN = ()
 # List of the dataset names for testing, as present in paths_catalog.py
 _C.DATASETS.TEST = ()
-
+_C.DATASETS.SPLIT = 0
 # -----------------------------------------------------------------------------
 # DataLoader
 # -----------------------------------------------------------------------------
@@ -402,8 +402,8 @@ _C.SOLVER.WEIGHT_DECAY_BIAS = 0
 _C.SOLVER.GAMMA = 0.1
 _C.SOLVER.STEPS = (30000,)
 
-_C.SOLVER.WARMUP_FACTOR = 1.0 / 3
-_C.SOLVER.WARMUP_ITERS = 500
+_C.SOLVER.WARMUP_FACTOR = 0.1 #1.0 / 3
+_C.SOLVER.WARMUP_ITERS = 1000
 _C.SOLVER.WARMUP_METHOD = "linear"
 
 _C.SOLVER.CHECKPOINT_PERIOD = 2500

@@ -15,7 +15,7 @@ from .collate_batch import BatchCollator, BBoxAugCollator
 from .transforms import build_transforms
 
 
-def build_dataset(dataset_list, transforms, dataset_catalog, is_train=True):
+def build_dataset(dataset_list, transforms, dataset_catalog, is_train=True, split=0):
     """
     Arguments:
         dataset_list (list[str]): Contains the names of the datasets, i.e.,
@@ -38,6 +38,7 @@ def build_dataset(dataset_list, transforms, dataset_catalog, is_train=True):
         # during training
         if data["factory"] == "COCODataset":
             args["remove_images_without_annotations"] = is_train
+            args["split"] = split
         if data["factory"] == "PascalVOCDataset":
             args["use_difficult"] = not is_train
         args["transforms"] = transforms
@@ -155,10 +156,10 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0, is_
     )
     DatasetCatalog = paths_catalog.DatasetCatalog
     dataset_list = cfg.DATASETS.TRAIN if is_train else cfg.DATASETS.TEST
-
+    split = cfg.DATASETS.SPLIT
     # If bbox aug is enabled in testing, simply set transforms to None and we will apply transforms later
     transforms = None if not is_train and cfg.TEST.BBOX_AUG.ENABLED else build_transforms(cfg, is_train)
-    datasets = build_dataset(dataset_list, transforms, DatasetCatalog, is_train or is_for_period)
+    datasets = build_dataset(dataset_list, transforms, DatasetCatalog, is_train or is_for_period, split)
 
     if is_train:
         # save category_id to label name mapping
