@@ -137,6 +137,13 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
             masks = SegmentationMask(masks, img.size, mode='poly')
             target.add_field("masks", masks)
 
+        if not self.is_train:
+            img_ids = [ann["image_id"] for ann in anno]
+            ann_ids = [ann["id"] for ann in anno]
+            img_ids = torch.tensor(img_ids)
+            ann_ids = torch.tensor(ann_ids)
+            target.add_field("img_ids", img_ids)
+            target.add_field("ann_ids", ann_ids)
         # if anno and "keypoints" in anno[0]:
         #     keypoints = [obj["keypoints"] for obj in anno]
         #     keypoints = PersonKeypoints(keypoints, img.size)

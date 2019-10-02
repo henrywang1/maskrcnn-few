@@ -26,6 +26,8 @@ def compute_on_dataset(model, data_loader, device, timer=None):
                 timer.tic()
             if cfg.TEST.BBOX_AUG.ENABLED:
                 output = im_detect_bbox_aug(model, images, device)
+            elif len(targets[0]) == 0:
+                output = targets[0]
             else:
                 targets = [target.to(device) for target in targets]
                 output = model(images.to(device), targets)
@@ -33,6 +35,8 @@ def compute_on_dataset(model, data_loader, device, timer=None):
                 if not cfg.MODEL.DEVICE == 'cpu':
                     torch.cuda.synchronize()
                 timer.toc()
+            if output is None: # extract feature
+                continue
             output = [o.to(cpu_device) for o in output]
         results_dict.update(
             {img_id: result for img_id, result in zip(image_ids, output)}
@@ -100,6 +104,9 @@ def inference(
             num_devices,
         )
     )
+
+    if not predictions: # extract feature only
+        return
 
     predictions = _accumulate_predictions_from_multiple_gpus(predictions)
     if not is_main_process():
