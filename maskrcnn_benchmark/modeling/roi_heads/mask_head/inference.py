@@ -41,6 +41,7 @@ class MaskPostProcessor(nn.Module):
         num_masks = x.shape[0]
         labels = [bbox.get_field("labels") for bbox in boxes]
         labels = torch.cat(labels)
+        labels = (labels > 0).long()
         index = torch.arange(num_masks, device=labels.device)
         mask_prob = mask_prob[index, labels][:, None]
 

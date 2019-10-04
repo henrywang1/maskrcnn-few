@@ -70,7 +70,7 @@ _C.DATASETS = CN()
 _C.DATASETS.TRAIN = ()
 # List of the dataset names for testing, as present in paths_catalog.py
 _C.DATASETS.TEST = ()
-
+_C.DATASETS.SPLIT = 0
 # -----------------------------------------------------------------------------
 # DataLoader
 # -----------------------------------------------------------------------------
@@ -212,7 +212,7 @@ _C.MODEL.ROI_BOX_HEAD.PREDICTOR = "FastRCNNPredictor"
 _C.MODEL.ROI_BOX_HEAD.POOLER_RESOLUTION = 14
 _C.MODEL.ROI_BOX_HEAD.POOLER_SAMPLING_RATIO = 0
 _C.MODEL.ROI_BOX_HEAD.POOLER_SCALES = (1.0 / 16,)
-_C.MODEL.ROI_BOX_HEAD.NUM_CLASSES = 81
+_C.MODEL.ROI_BOX_HEAD.NUM_CLASSES = 2
 # Hidden layer dimension when using an MLP for the RoI box head
 _C.MODEL.ROI_BOX_HEAD.MLP_HEAD_DIM = 1024
 # GN
@@ -402,8 +402,8 @@ _C.SOLVER.WEIGHT_DECAY_BIAS = 0
 _C.SOLVER.GAMMA = 0.1
 _C.SOLVER.STEPS = (30000,)
 
-_C.SOLVER.WARMUP_FACTOR = 1.0 / 3
-_C.SOLVER.WARMUP_ITERS = 500
+_C.SOLVER.WARMUP_FACTOR = 0.1 #1.0 / 3
+_C.SOLVER.WARMUP_ITERS = 1000
 _C.SOLVER.WARMUP_METHOD = "linear"
 
 _C.SOLVER.CHECKPOINT_PERIOD = 2500
@@ -412,7 +412,8 @@ _C.SOLVER.TEST_PERIOD = 0
 # Number of images per batch
 # This is global, so if we have 8 GPUs and IMS_PER_BATCH = 16, each GPU will
 # see 2 images per batch
-_C.SOLVER.IMS_PER_BATCH = 16
+# 8 pairs of query and support imgs
+_C.SOLVER.IMS_PER_BATCH = 8
 
 # ---------------------------------------------------------------------------- #
 # Specific test options
@@ -448,7 +449,10 @@ _C.TEST.BBOX_AUG.MAX_SIZE = 4000
 # Horizontal flip at each scale
 _C.TEST.BBOX_AUG.SCALE_H_FLIP = False
 
-
+_C.TEST.EXTRACT_FEATURE = False
+_C.TEST.USE_FEATURE = False
+_C.TEST.SHOT = 1
+_C.TEST.WAY = 0
 # ---------------------------------------------------------------------------- #
 # Misc options
 # ---------------------------------------------------------------------------- #
