@@ -31,16 +31,19 @@ def compute_on_dataset(model, data_loader, device, timer=None):
             else:
                 targets = [target.to(device) for target in targets]
                 output = model(images.to(device), targets)
+                if output is None: # extract feature only
+                    continue
+                output = [o.to(cpu_device) for o in output]
             if timer:
                 if not cfg.MODEL.DEVICE == 'cpu':
                     torch.cuda.synchronize()
                 timer.toc()
-            if output is None: # extract feature
-                continue
-            output = [o.to(cpu_device) for o in output]
-        results_dict.update(
-            {img_id: result for img_id, result in zip(image_ids, output)}
-        )
+        if not output:
+            results_dict.update({image_ids[0]:output})
+        else:
+            results_dict.update(
+                {img_id: result for img_id, result in zip(image_ids, output)}
+            )
     return results_dict
 
 
