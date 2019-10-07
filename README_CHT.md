@@ -6,7 +6,7 @@
 
 ## How to train
 ### Datasets
-參考官方文件 (https://github.com/henrywang1/maskrcnn-few#perform-training-on-coco-dataset)，但要改成 train2017, val2017
+參考 [官方文件](https://github.com/henrywang1/maskrcnn-few#perform-training-on-coco-dataset)，但要改成 train2017, val2017
 
 ### Arguments
 修改 [`train.sh`](train.sh)，訓練參數 (batch size, learning rate, iteration)
