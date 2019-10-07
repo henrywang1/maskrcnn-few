@@ -35,7 +35,10 @@ class GeneralizedRCNN(nn.Module):
         self.rpn = build_rpn(cfg, self.backbone.out_channels)
         self.roi_heads = build_roi_heads(cfg, self.backbone.out_channels)
         self.pooler_box = self.roi_heads.box.feature_extractor.pooler
-        self.pooler_mask = self.roi_heads.mask.feature_extractor.pooler
+        if cfg.MODEL.MASK_ON:
+            self.pooler_mask = self.roi_heads.mask.feature_extractor.pooler
+        else:
+            self.pooler_mask = self.pooler_box
 
         self.is_extract_feature = cfg.TEST.EXTRACT_FEATURE
         self.is_use_feature = cfg.TEST.USE_FEATURE
