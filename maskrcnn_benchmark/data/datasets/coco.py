@@ -99,9 +99,9 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
             self.img_repeat_factor = defaultdict(float)
             for img_id in self.ids:
                 all_class_fractions = [class_fractions[i] for i in self.img_cls[img_id]]
-                repeat_factor = [1/fc for fc in all_class_fractions]
+                repeat_factor = [1.0/fc for fc in all_class_fractions]
                 repeat_factor = max(repeat_factor)
-                repeat_factor = max(1, repeat_factor)
+                repeat_factor = max(1.0, repeat_factor)
                 self.img_repeat_factor[img_id] = repeat_factor
 
         self.categories = {cat['id']: cat['name'] for cat in self.coco.cats.values()}
