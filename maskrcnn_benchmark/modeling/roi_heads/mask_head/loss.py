@@ -6,6 +6,7 @@ from maskrcnn_benchmark.layers import smooth_l1_loss
 from maskrcnn_benchmark.modeling.matcher import Matcher
 from maskrcnn_benchmark.structures.boxlist_ops import boxlist_iou
 from maskrcnn_benchmark.modeling.utils import cat
+from maskrcnn_benchmark.structures.segmentation_mask import SegmentationMask
 
 
 def project_masks_on_boxes(segmentation_masks, proposals, discretization_size):
@@ -41,6 +42,38 @@ def project_masks_on_boxes(segmentation_masks, proposals, discretization_size):
         return torch.empty(0, dtype=torch.float32, device=device)
     return torch.stack(masks, dim=0).to(device, dtype=torch.float32)
 
+def project_boxes_on_boxes(matched_bboxes, proposals, discretization_size):
+    masks = []
+    M = discretization_size
+    device = proposals.bbox.device
+    proposals = proposals.convert("xyxy")
+    original_size = proposals.size
+    assert matched_bboxes.size == proposals.size, "{}, {}".format(
+        matched_bboxes, proposals
+    )
+
+    proposals = proposals.bbox.to(torch.device("cpu"))
+    matched_bboxes = matched_bboxes.bbox.to(torch.device("cpu"))
+
+    # Generate segmentation masks based on matched_bboxes
+    polygons = []
+    for matched_bbox in matched_bboxes:
+        x1, y1, x2, y2 = matched_bbox[0], matched_bbox[1], matched_bbox[2], matched_bbox[3]
+        p = [[x1, y1, x1, y2, x2, y2, x2, y1]]
+        polygons.append(p)
+    segmentation_masks = SegmentationMask(polygons, original_size)
+
+    for segmentation_mask, proposal in zip(segmentation_masks, proposals):
+        # crop the masks, resize them to the desired resolution and
+        # then convert them to the tensor representation,
+        # instead of the list representation that was used
+        cropped_mask = segmentation_mask.crop(proposal)
+        scaled_mask = cropped_mask.resize((M, M))
+        mask = scaled_mask.convert(mode="mask")
+        masks.append(mask.get_mask_tensor())
+    if len(masks) == 0:
+        return torch.empty(0, dtype=torch.float32, device=device)
+    return torch.stack(masks, dim=0).to(device, dtype=torch.float32)
 
 class MaskRCNNLossComputation(object):
     def __init__(self, proposal_matcher, discretization_size):
@@ -51,12 +84,61 @@ class MaskRCNNLossComputation(object):
         """
         self.proposal_matcher = proposal_matcher
         self.discretization_size = discretization_size
+        mask_h = mask_w = discretization_size
+        self.aff_matrixes = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+        self.aff_maps = []
+        self.ctr_maps = []
+        for col in range(mask_h):
+            for row in range(mask_w):
+                for aff_matrix in self.aff_matrixes:
+                    ctr_map = torch.zeros((mask_h, mask_w), device='cuda')
+                    ctr_map[col][row] = 1
+                    self.ctr_maps.append(ctr_map)
+
+                    aff_map = torch.zeros((mask_h, mask_w), device='cuda')
+                    x_offset, y_offset = aff_matrix[0], aff_matrix[1]
+                    pix_x = row + x_offset
+                    pix_y = col + y_offset
+                    if pix_x < 0 or pix_y < 0 or pix_x >= mask_w or pix_y >= mask_h:
+                        continue
+                    aff_map[pix_y][pix_x] = 1
+                    self.aff_maps.append(aff_map)
+
+        self.center_weight = torch.tensor([[0., 0., 0.],
+                                           [0., 1., 0.],
+                                           [0., 0., 0.]])
+        self.affinity_weights_list = [
+            torch.tensor([[0., 0., 0.],
+                          [1., 0., 0.],
+                          [0., 0., 0.]]),
+            torch.tensor([[0., 0., 0.],
+                          [0., 0., 1.],
+                          [0., 0., 0.]]),
+            torch.tensor([[0., 1., 0.],
+                          [0., 0., 0.],
+                          [0., 0., 0.]]),
+            torch.tensor([[0., 0., 0.],
+                          [0., 0., 0.],
+                          [0., 1., 0.]]),
+            torch.tensor([[1., 0., 0.],
+                          [0., 0., 0.],
+                          [0., 0., 0.]]),
+            torch.tensor([[0., 0., 1.],
+                          [0., 0., 0.],
+                          [0., 0., 0.]]),
+            torch.tensor([[0., 0., 0.],
+                          [0., 0., 0.],
+                          [1., 0., 0.]]),
+            torch.tensor([[0., 0., 0.],
+                          [0., 0., 0.],
+                          [0., 0., 1.]]),
+        ]
 
     def match_targets_to_proposals(self, proposal, target):
         match_quality_matrix = boxlist_iou(target, proposal)
         matched_idxs = self.proposal_matcher(match_quality_matrix)
         # Mask RCNN needs "labels" and "masks "fields for creating the targets
-        target = target.copy_with_fields(["labels", "masks"])
+        target = target.copy_with_fields(["labels"]) #, "masks"
         # get the targets corresponding GT for each proposal
         # NB: need to clamp the indices because we can have a single
         # GT in the image, and matched_idxs can be -2, which goes
@@ -99,6 +181,61 @@ class MaskRCNNLossComputation(object):
 
         return labels, masks
 
+    def prepare_targets_cr(self, proposals, targets):
+        # Sample both negative and positive proposals
+        # Only with per col/row labels (without mask)
+        labels = []
+        for proposals_per_image, targets_per_image in zip(proposals, targets):
+            device = proposals_per_image.bbox.device
+
+            matched_targets = self.match_targets_to_proposals(
+                proposals_per_image, targets_per_image
+            )
+            matched_idxs = matched_targets.get_field("matched_idxs")
+
+            labels_per_image = matched_targets.get_field("labels")
+            labels_per_image = labels_per_image.to(dtype=torch.int64)
+
+            # this can probably be removed, but is left here for clarity
+            # and completeness
+            neg_inds = matched_idxs == Matcher.BELOW_LOW_THRESHOLD
+            labels_per_image[neg_inds] = 0
+
+            # mask scores are only computed on positive samples
+            pos_inds = torch.nonzero(labels_per_image > 0).squeeze(1)
+
+            # delete field "mask"
+            new_matched_targets = matched_targets.copy_with_fields(
+                ["matched_idxs", "labels"])
+            # generate bbox corresponding proposals
+            # TODO for now, whole mask (and thus all col/row label) of positive sample is 1, and of negative sample is 0
+            #       because fg iou threshold is too high, when
+            pos_masks_per_image = project_boxes_on_boxes(
+                new_matched_targets[pos_inds], proposals_per_image[pos_inds], self.discretization_size
+            )
+
+            # generate label per image
+            # initialize as zeros, and thus all labels of negative sample is zeros
+            M = self.discretization_size
+            labels_per_image = torch.zeros(
+                (len(proposals_per_image.bbox), M + M), device=device)  # (n_proposal, 56)
+
+            # generate label of positive sample
+            pos_labels = []
+            for mask in pos_masks_per_image:
+                label_col = [torch.any(mask[col, :] > 0)
+                             for col in range(mask.size(0))]
+                label_row = [torch.any(mask[:, row] > 0)
+                             for row in range(mask.size(1))]
+                label = torch.stack(label_col + label_row)
+                pos_labels.append(label)
+            pos_labels = torch.stack(pos_labels).float()
+            labels_per_image[pos_inds] = pos_labels
+
+            # save
+            labels.append(labels_per_image)
+        return labels
+      
     def __call__(self, proposals, mask_logits, targets):
         """
         Arguments:
@@ -109,25 +246,63 @@ class MaskRCNNLossComputation(object):
         Return:
             mask_loss (Tensor): scalar tensor containing the loss
         """
-        labels, mask_targets = self.prepare_targets(proposals, targets)
-
+        # labels, mask_targets = self.prepare_targets(proposals, targets)
+        mil_score = mask_logits[:, 1]
+        mil_score = torch.cat([mil_score.max(1)[0], mil_score.max(1)[0]], 1)
         # labels = cat(labels, dim=0)
         labels = cat([p.get_field("proto_labels") for p in proposals])
         labels = (labels > 0).long()
-        mask_targets = cat(mask_targets, dim=0)
-
         positive_inds = torch.nonzero(labels > 0).squeeze(1)
-        labels_pos = labels[positive_inds]
-
+        
         # torch.mean (in binary_cross_entropy_with_logits) doesn't
         # accept empty tensors, so handle it separately
-        if mask_targets.numel() == 0:
-            return mask_logits.sum() * 0
 
-        mask_loss = F.binary_cross_entropy_with_logits(
-            mask_logits[positive_inds, labels_pos], mask_targets[positive_inds]
-        )
-        return mask_loss
+            
+        # for both positive/negative samples, but in our case, only positive samples
+        # mask_targets = cat(mask_targets, dim=0)
+        # if mask_targets.numel() == 0:
+        #  return mask_logits.sum() * 0
+        
+        labels_cr = self.prepare_targets_cr(proposals, targets)
+        labels_cr = cat(labels_cr, dim=0)
+        # because we only care about features adapted by the same class prototype
+        mil_loss = F.binary_cross_entropy_with_logits(mil_score[positive_inds], labels_cr[positive_inds])
+        # positive_inds = torch.nonzero(labels > 0).squeeze(1)
+        # labels_pos = labels[positive_inds]
+        # mask_loss = F.binary_cross_entropy_with_logits(
+        #     mask_logits[positive_inds, labels_pos], mask_targets[positive_inds]
+        # )
+        device = mask_logits.device
+        b, c, h, w = mask_logits.shape
+        affinity_loss = []
+
+        # Linear transform to [0, 1]
+        # eps = torch.tensor(1e-6).to(device)
+        # (n, 784)
+        # mask_logits_normalize = mask_logits[:, 1:].reshape(-1, h * w)
+        # min_val, _ = torch.min(mask_logits_normalize, dim=1)
+        # offset = (0 - min_val).reshape(-1, 1)  # transpose
+        # mask_logits_normalize = mask_logits_normalize + offset
+        # max_val, _ = torch.max(mask_logits_normalize, dim=1)
+        # scalar = max_val.reshape(-1, 1)  # transpose
+        # mask_logits_normalize = mask_logits_normalize / (scalar + 1e-6)
+        # mask_logits_normalize = mask_logits_normalize.reshape(mask_logits.shape)
+        mask_logits_normalize = mask_logits[:, 1:].sigmoid()
+
+        conv = torch.nn.Conv2d(1, 1, 3, bias=False, padding=(1, 1))
+        for w in self.affinity_weights_list:
+            weights = self.center_weight - w
+            weights = weights.view(1, 1, 3, 3).to(device)
+            conv.weight = torch.nn.Parameter(weights)
+            for param in conv.parameters():
+                param.requires_grad = False
+            aff_map = conv(mask_logits_normalize)
+
+            cur_loss = mask_logits_normalize * (aff_map ** 2)
+            cur_loss = torch.mean(cur_loss)
+            affinity_loss.append(cur_loss)
+        affinity_loss = torch.mean(torch.stack(affinity_loss))
+        return 1.2 * mil_loss + 0.05* affinity_loss
 
 
 def make_roi_mask_loss_evaluator(cfg):
