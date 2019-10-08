@@ -251,9 +251,9 @@ class MaskRCNNLossComputation(object):
         labels = (labels > 0).long()
         positive_inds = torch.nonzero(labels > 0).squeeze(1)
 
-        mil_score = mask_logits[positive_inds, 1]
+        mil_score = mask_logits[:, 1]
         mil_score = torch.cat([mil_score.max(1)[0], mil_score.max(1)[0]], 1)
-        
+        mil_score = mil_score[positive_inds]
         # torch.mean (in binary_cross_entropy_with_logits) doesn't
         # accept empty tensors, so handle it separately
 
