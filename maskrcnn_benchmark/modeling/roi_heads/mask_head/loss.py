@@ -247,12 +247,12 @@ class MaskRCNNLossComputation(object):
             mask_loss (Tensor): scalar tensor containing the loss
         """
         # labels, mask_targets = self.prepare_targets(proposals, targets)
-        mil_score = mask_logits[:, 1]
-        mil_score = torch.cat([mil_score.max(1)[0], mil_score.max(1)[0]], 1)
-        # labels = cat(labels, dim=0)
         labels = cat([p.get_field("proto_labels") for p in proposals])
         labels = (labels > 0).long()
         positive_inds = torch.nonzero(labels > 0).squeeze(1)
+
+        mil_score = mask_logits[positive_inds, 1]
+        mil_score = torch.cat([mil_score.max(1)[0], mil_score.max(1)[0]], 1)
         
         # torch.mean (in binary_cross_entropy_with_logits) doesn't
         # accept empty tensors, so handle it separately
@@ -262,11 +262,10 @@ class MaskRCNNLossComputation(object):
         # mask_targets = cat(mask_targets, dim=0)
         # if mask_targets.numel() == 0:
         #  return mask_logits.sum() * 0
-        
         labels_cr = self.prepare_targets_cr(proposals, targets)
         labels_cr = cat(labels_cr, dim=0)
         # because we only care about features adapted by the same class prototype
-        mil_loss = F.binary_cross_entropy_with_logits(mil_score[positive_inds], labels_cr[positive_inds])
+        mil_loss = F.binary_cross_entropy_with_logits(mil_score, labels_cr[positive_inds])
         # positive_inds = torch.nonzero(labels > 0).squeeze(1)
         # labels_pos = labels[positive_inds]
         # mask_loss = F.binary_cross_entropy_with_logits(
@@ -288,7 +287,6 @@ class MaskRCNNLossComputation(object):
         # mask_logits_normalize = mask_logits_normalize / (scalar + 1e-6)
         # mask_logits_normalize = mask_logits_normalize.reshape(mask_logits.shape)
         mask_logits_normalize = mask_logits[:, 1:].sigmoid()
-
         conv = torch.nn.Conv2d(1, 1, 3, bias=False, padding=(1, 1))
         for w in self.affinity_weights_list:
             weights = self.center_weight - w
