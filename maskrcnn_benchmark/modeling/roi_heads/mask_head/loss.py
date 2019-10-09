@@ -231,7 +231,7 @@ class MaskRCNNLossComputation(object):
         # labels, mask_targets = self.prepare_targets(proposals, targets)
         labels = cat([p.get_field("proto_labels") for p in proposals])
         labels = (labels > 0).long()
-        negtive_inds = torch.nonzero(labels == 0).squeeze(1)
+        pos_inds = torch.nonzero(labels > 0).squeeze(1)
 
         mil_score = mask_logits[:, 1]
         mil_score = torch.cat([mil_score.max(1)[0], mil_score.max(2)[0]], 1)
@@ -245,9 +245,9 @@ class MaskRCNNLossComputation(object):
         labels_cr = cat(labels_cr, dim=0)
 
         # if an RoI feature is adapted by different classes, the output mask should be zero
-        labels_cr[negtive_inds] = 0.
+        # labels_cr[negtive_inds] = 0.
 
-        mil_loss = F.binary_cross_entropy_with_logits(mil_score, labels_cr)
+        mil_loss = F.binary_cross_entropy_with_logits(mil_score[pos_inds], labels_cr[pos_inds])
         mask_logits_n = mask_logits[:, 1:].sigmoid()
         aff_conv = lambda x, w: torch.nn.functional.conv2d(x, weight=w, padding=(1, 1))
         aff_maps = [aff_conv(mask_logits_n, w) for w in self.aff_weights]
