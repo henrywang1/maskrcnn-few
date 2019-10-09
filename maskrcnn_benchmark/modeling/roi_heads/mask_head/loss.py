@@ -104,35 +104,17 @@ class MaskRCNNLossComputation(object):
                     aff_map[pix_y][pix_x] = 1
                     self.aff_maps.append(aff_map)
 
-        self.center_weight = torch.tensor([[0., 0., 0.],
-                                           [0., 1., 0.],
-                                           [0., 0., 0.]])
-        self.affinity_weights_list = [
-            torch.tensor([[0., 0., 0.],
-                          [1., 0., 0.],
-                          [0., 0., 0.]]),
-            torch.tensor([[0., 0., 0.],
-                          [0., 0., 1.],
-                          [0., 0., 0.]]),
-            torch.tensor([[0., 1., 0.],
-                          [0., 0., 0.],
-                          [0., 0., 0.]]),
-            torch.tensor([[0., 0., 0.],
-                          [0., 0., 0.],
-                          [0., 1., 0.]]),
-            torch.tensor([[1., 0., 0.],
-                          [0., 0., 0.],
-                          [0., 0., 0.]]),
-            torch.tensor([[0., 0., 1.],
-                          [0., 0., 0.],
-                          [0., 0., 0.]]),
-            torch.tensor([[0., 0., 0.],
-                          [0., 0., 0.],
-                          [1., 0., 0.]]),
-            torch.tensor([[0., 0., 0.],
-                          [0., 0., 0.],
-                          [0., 0., 1.]]),
-        ]
+        center_weight = torch.zeros((3, 3))
+        center_weight[1][1] = 1.
+        aff_weights = []
+        for i in range(3):
+            for j in range(3):
+                if i == 1 and j == 1:
+                    continue
+                weight = torch.zeros((3, 3))
+                weight[i][j] = 1.
+                aff_weights.append(center_weight - weight)
+        self.aff_weights = [w.view(1, 1, 3, 3).to("cuda") for w in aff_weights]
 
     def match_targets_to_proposals(self, proposal, target):
         match_quality_matrix = boxlist_iou(target, proposal)
@@ -249,56 +231,27 @@ class MaskRCNNLossComputation(object):
         # labels, mask_targets = self.prepare_targets(proposals, targets)
         labels = cat([p.get_field("proto_labels") for p in proposals])
         labels = (labels > 0).long()
-        positive_inds = torch.nonzero(labels > 0).squeeze(1)
+        negtive_inds = torch.nonzero(labels == 0).squeeze(1)
 
         mil_score = mask_logits[:, 1]
-        mil_score = torch.cat([mil_score.max(1)[0], mil_score.max(1)[0]], 1)
-        mil_score = mil_score[positive_inds]
+        mil_score = torch.cat([mil_score.max(1)[0], mil_score.max(2)[0]], 1)
+
         # torch.mean (in binary_cross_entropy_with_logits) doesn't
         # accept empty tensors, so handle it separately
+        if mil_score.numel() == 0:
+            return mask_logits.sum() * 0
 
-            
-        # for both positive/negative samples, but in our case, only positive samples
-        # mask_targets = cat(mask_targets, dim=0)
-        # if mask_targets.numel() == 0:
-        #  return mask_logits.sum() * 0
         labels_cr = self.prepare_targets_cr(proposals, targets)
         labels_cr = cat(labels_cr, dim=0)
-        # because we only care about features adapted by the same class prototype
-        mil_loss = F.binary_cross_entropy_with_logits(mil_score, labels_cr[positive_inds])
-        # positive_inds = torch.nonzero(labels > 0).squeeze(1)
-        # labels_pos = labels[positive_inds]
-        # mask_loss = F.binary_cross_entropy_with_logits(
-        #     mask_logits[positive_inds, labels_pos], mask_targets[positive_inds]
-        # )
-        device = mask_logits.device
-        b, c, h, w = mask_logits.shape
-        affinity_loss = []
 
-        # Linear transform to [0, 1]
-        # eps = torch.tensor(1e-6).to(device)
-        # (n, 784)
-        # mask_logits_normalize = mask_logits[:, 1:].reshape(-1, h * w)
-        # min_val, _ = torch.min(mask_logits_normalize, dim=1)
-        # offset = (0 - min_val).reshape(-1, 1)  # transpose
-        # mask_logits_normalize = mask_logits_normalize + offset
-        # max_val, _ = torch.max(mask_logits_normalize, dim=1)
-        # scalar = max_val.reshape(-1, 1)  # transpose
-        # mask_logits_normalize = mask_logits_normalize / (scalar + 1e-6)
-        # mask_logits_normalize = mask_logits_normalize.reshape(mask_logits.shape)
-        mask_logits_normalize = mask_logits[:, 1:].sigmoid()
-        conv = torch.nn.Conv2d(1, 1, 3, bias=False, padding=(1, 1))
-        for w in self.affinity_weights_list:
-            weights = self.center_weight - w
-            weights = weights.view(1, 1, 3, 3).to(device)
-            conv.weight = torch.nn.Parameter(weights)
-            for param in conv.parameters():
-                param.requires_grad = False
-            aff_map = conv(mask_logits_normalize)
+        # if an RoI feature is adapted by different classes, the output mask should be zero
+        labels_cr[negtive_inds] = 0.
 
-            cur_loss = mask_logits_normalize * (aff_map ** 2)
-            cur_loss = torch.mean(cur_loss)
-            affinity_loss.append(cur_loss)
+        mil_loss = F.binary_cross_entropy_with_logits(mil_score, labels_cr)
+        mask_logits_n = mask_logits[:, 1:].sigmoid()
+        aff_conv = lambda x, w: torch.nn.functional.conv2d(x, weight=w, padding=(1, 1))
+        aff_maps = [aff_conv(mask_logits_n, w) for w in self.aff_weights]
+        affinity_loss = [mask_logits_n*(aff_map**2) for aff_map in aff_maps]
         affinity_loss = torch.mean(torch.stack(affinity_loss))
         return 1.2 * mil_loss + 0.05* affinity_loss
 
