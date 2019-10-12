@@ -114,7 +114,8 @@ class MaskRCNNLossComputation(object):
                 weight = torch.zeros((3, 3))
                 weight[i][j] = 1.
                 aff_weights.append(center_weight - weight)
-        self.aff_weights = [w.view(1, 1, 3, 3).to("cuda") for w in aff_weights]
+        aff_weights = [w.view(1, 1, 3, 3).to("cuda") for w in aff_weights]
+        self.aff_weights = torch.cat(aff_weights, 0)
 
     def match_targets_to_proposals(self, proposal, target):
         match_quality_matrix = boxlist_iou(target, proposal)
@@ -249,10 +250,11 @@ class MaskRCNNLossComputation(object):
 
         mil_loss = F.binary_cross_entropy_with_logits(mil_score[pos_inds], labels_cr[pos_inds])
         mask_logits_n = mask_logits[:, 1:].sigmoid()
-        aff_conv = lambda x, w: torch.nn.functional.conv2d(x, weight=w, padding=(1, 1))
-        aff_maps = [aff_conv(mask_logits_n, w) for w in self.aff_weights]
-        affinity_loss = [mask_logits_n*(aff_map**2) for aff_map in aff_maps]
-        affinity_loss = torch.mean(torch.stack(affinity_loss))
+
+        aff_maps = F.conv2d(mask_logits_n, self.aff_weights, padding=(1, 1))
+        affinity_loss = mask_logits_n*(aff_maps**2)
+        affinity_loss = torch.mean(affinity_loss)
+
         return 1.2 * mil_loss + 0.05* affinity_loss
 
 
