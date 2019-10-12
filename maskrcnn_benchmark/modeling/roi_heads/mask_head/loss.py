@@ -7,6 +7,7 @@ from maskrcnn_benchmark.modeling.matcher import Matcher
 from maskrcnn_benchmark.structures.boxlist_ops import boxlist_iou
 from maskrcnn_benchmark.modeling.utils import cat
 from maskrcnn_benchmark.structures.segmentation_mask import SegmentationMask
+from maskrcnn_benchmark.modeling.box_coder import BoxCoder
 
 
 def project_masks_on_boxes(segmentation_masks, proposals, discretization_size):
@@ -45,16 +46,10 @@ def project_masks_on_boxes(segmentation_masks, proposals, discretization_size):
 def project_boxes_on_boxes(matched_bboxes, proposals, discretization_size):
     masks = []
     M = discretization_size
-    device = proposals.bbox.device
-    proposals = proposals.convert("xyxy")
     original_size = proposals.size
-    assert matched_bboxes.size == proposals.size, "{}, {}".format(
-        matched_bboxes, proposals
-    )
 
     proposals = proposals.bbox.to(torch.device("cpu"))
-    matched_bboxes = matched_bboxes.bbox.to(torch.device("cpu"))
-
+    matched_bboxes = matched_bboxes.to(torch.device("cpu"))
     # Generate segmentation masks based on matched_bboxes
     polygons = []
     for matched_bbox in matched_bboxes:
@@ -71,9 +66,8 @@ def project_boxes_on_boxes(matched_bboxes, proposals, discretization_size):
         scaled_mask = cropped_mask.resize((M, M))
         mask = scaled_mask.convert(mode="mask")
         masks.append(mask.get_mask_tensor())
-    if len(masks) == 0:
-        return torch.empty(0, dtype=torch.float32, device=device)
-    return torch.stack(masks, dim=0).to(device, dtype=torch.float32)
+
+    return torch.stack(masks, dim=0).to(dtype=torch.float32)
 
 class MaskRCNNLossComputation(object):
     def __init__(self, proposal_matcher, discretization_size):
@@ -84,26 +78,6 @@ class MaskRCNNLossComputation(object):
         """
         self.proposal_matcher = proposal_matcher
         self.discretization_size = discretization_size
-        mask_h = mask_w = discretization_size
-        self.aff_matrixes = [[-1, 0], [1, 0], [0, -1], [0, 1]]
-        self.aff_maps = []
-        self.ctr_maps = []
-        for col in range(mask_h):
-            for row in range(mask_w):
-                for aff_matrix in self.aff_matrixes:
-                    ctr_map = torch.zeros((mask_h, mask_w), device='cuda')
-                    ctr_map[col][row] = 1
-                    self.ctr_maps.append(ctr_map)
-
-                    aff_map = torch.zeros((mask_h, mask_w), device='cuda')
-                    x_offset, y_offset = aff_matrix[0], aff_matrix[1]
-                    pix_x = row + x_offset
-                    pix_y = col + y_offset
-                    if pix_x < 0 or pix_y < 0 or pix_x >= mask_w or pix_y >= mask_h:
-                        continue
-                    aff_map[pix_y][pix_x] = 1
-                    self.aff_maps.append(aff_map)
-
         center_weight = torch.zeros((3, 3))
         center_weight[1][1] = 1.
         aff_weights = []
@@ -116,6 +90,7 @@ class MaskRCNNLossComputation(object):
                 aff_weights.append(center_weight - weight)
         aff_weights = [w.view(1, 1, 3, 3).to("cuda") for w in aff_weights]
         self.aff_weights = torch.cat(aff_weights, 0)
+        self.box_coder = BoxCoder(weights=(10., 10., 5., 5.))
 
     def match_targets_to_proposals(self, proposal, target):
         match_quality_matrix = boxlist_iou(target, proposal)
@@ -164,61 +139,34 @@ class MaskRCNNLossComputation(object):
 
         return labels, masks
 
-    def prepare_targets_cr(self, proposals, targets):
+    def prepare_targets_cr(self, proposals):
         # Sample both negative and positive proposals
         # Only with per col/row labels (without mask)
         labels = []
-        for proposals_per_image, targets_per_image in zip(proposals, targets):
-            device = proposals_per_image.bbox.device
+        for proposals_per_image in proposals:
 
-            matched_targets = self.match_targets_to_proposals(
-                proposals_per_image, targets_per_image
-            )
-            matched_idxs = matched_targets.get_field("matched_idxs")
+            matched_bbox = self.box_coder.decode(proposals_per_image.get_field(
+                "regression_targets"), proposals_per_image.bbox)
 
-            labels_per_image = matched_targets.get_field("labels")
-            labels_per_image = labels_per_image.to(dtype=torch.int64)
-
-            # this can probably be removed, but is left here for clarity
-            # and completeness
-            neg_inds = matched_idxs == Matcher.BELOW_LOW_THRESHOLD
-            labels_per_image[neg_inds] = 0
-
-            # mask scores are only computed on positive samples
-            pos_inds = torch.nonzero(labels_per_image > 0).squeeze(1)
-
-            # delete field "mask"
-            new_matched_targets = matched_targets.copy_with_fields(
-                ["matched_idxs", "labels"])
-            # generate bbox corresponding proposals
-            # TODO for now, whole mask (and thus all col/row label) of positive sample is 1, and of negative sample is 0
-            #       because fg iou threshold is too high, when
-            pos_masks_per_image = project_boxes_on_boxes(
-                new_matched_targets[pos_inds], proposals_per_image[pos_inds], self.discretization_size
-            )
-
-            # generate label per image
-            # initialize as zeros, and thus all labels of negative sample is zeros
             M = self.discretization_size
-            labels_per_image = torch.zeros(
-                (len(proposals_per_image.bbox), M + M), device=device)  # (n_proposal, 56)
+            pos_masks_per_image = torch.ones(len(proposals_per_image), M, M, dtype=torch.float32)
+            not_matched_idx = (proposals_per_image.get_field(
+                "regression_targets") != 0).any(1)
+            # if a box fully matched the proposal, we set all values to 1
+            # otherwise, we project the box on proposal
+            if not_matched_idx.any():
+                pos_masks_per_image[not_matched_idx] = project_boxes_on_boxes(
+                    matched_bbox[not_matched_idx], proposals_per_image[not_matched_idx], M)
 
-            # generate label of positive sample
-            pos_labels = []
-            for mask in pos_masks_per_image:
-                label_col = [torch.any(mask[col, :] > 0)
-                             for col in range(mask.size(0))]
-                label_row = [torch.any(mask[:, row] > 0)
-                             for row in range(mask.size(1))]
-                label = torch.stack(label_col + label_row)
-                pos_labels.append(label)
-            pos_labels = torch.stack(pos_labels).float()
-            labels_per_image[pos_inds] = pos_labels
+            pos_masks_per_image = pos_masks_per_image.cuda()
+            pos_labels = torch.cat(
+                [pos_masks_per_image.sum(2), pos_masks_per_image.sum(1)], 1)
+            pos_labels = (pos_labels > 0).float()
 
-            # save
-            labels.append(labels_per_image)
+            labels.append(pos_labels)
+
         return labels
-      
+
     def __call__(self, proposals, mask_logits, targets):
         """
         Arguments:
@@ -242,7 +190,7 @@ class MaskRCNNLossComputation(object):
         if mil_score.numel() == 0:
             return mask_logits.sum() * 0
 
-        labels_cr = self.prepare_targets_cr(proposals, targets)
+        labels_cr = self.prepare_targets_cr(proposals)
         labels_cr = cat(labels_cr, dim=0)
 
         # if an RoI feature is adapted by different classes, the output mask should be zero
