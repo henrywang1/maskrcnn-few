@@ -42,32 +42,19 @@ def has_valid_annotation(anno):
 
 class COCODataset(torchvision.datasets.coco.CocoDetection):
     def __init__(
-        self, ann_file, root, remove_images_without_annotations, transforms=None, split=0
+        self, ann_file, root, remove_images_without_annotations, transforms=None, split=0, extract_feature=False
     ):
         self.is_train = remove_images_without_annotations
-        if split:
-            ann_file_new = ann_file + "_" + str(split)
-            if not os.path.isfile(ann_file_new) and is_main_process():
-                with open(ann_file) as f_in:
-                    anns = json.load(f_in)
-                if split == 5: #voc non-voc
-                    if not self.is_train:
-                        pass
-                    else:
-                        voc_inds = (0, 1, 2, 3, 4, 5, 6, 8, 14, 15, 16, 17, 18, 19, 39, 56, 57, 58, 60, 62)
-                        split_cat = [a["id"] for i, a in enumerate(anns["categories"]) if not i in voc_inds]
-                else:
-                    if not self.is_train:
-                        split_cat = [a["id"] for i, a in enumerate(anns["categories"]) if i % 4 == (split-1)]
-                    else:
-                        split_cat = [a["id"] for i, a in enumerate(anns["categories"]) if not i % 4 == (split-1)]
-                anns["annotations"] = [v for v in anns['annotations'] if v["category_id"] in split_cat]
-                with open(ann_file_new, "w") as f_out:
-                    json.dump(anns, f_out)
-            ann_file = ann_file_new
-        
+        self.is_lvis = "lvis" in ann_file or False
+
+        if self.is_lvis:
+            ann_file = self.preprocess_lvis(ann_file, extract_feature)
+        elif split:
+            ann_file = self.preprocess_coco(ann_file, split)
+
         synchronize()
         print("Use annotation {}".format(ann_file))
+        self.ann_file = ann_file
         super(COCODataset, self).__init__(root, ann_file)
         # sort indices for reproducible results
         self.ids = sorted(self.ids)
@@ -104,8 +91,6 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
                 repeat_factor = max(1.0, repeat_factor)
                 self.img_repeat_factor[img_id] = repeat_factor
 
-        self.categories = {cat['id']: cat['name'] for cat in self.coco.cats.values()}
-
         self.json_category_id_to_contiguous_id = {
             v: i + 1 for i, v in enumerate(self.coco.getCatIds())
         }
@@ -116,12 +101,61 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         self.img_to_id_map = {v: k for k, v in enumerate(self.ids)}
         self._transforms = transforms
 
+    def preprocess_lvis(self, ann_file, extract_feature):
+        suffix = "_freq" if self.is_train else "_common_rare"
+        ann_file_new = ann_file + suffix
+        if not os.path.isfile(ann_file_new) and is_main_process():
+            with open(ann_file) as f_in:
+                anns = json.load(f_in)
+                cids_lvis_f = [a["id"] for a in anns["categories"] if a["frequency"] == "f"]
+            if self.is_train:
+                anns["annotations"] = [v for v in anns["annotations"] if v["category_id"] in cids_lvis_f]
+            else:
+                anns["annotations"] = [v for v in anns["annotations"] if v["category_id"] not in cids_lvis_f]
+                # classes not exhaustively annotated should not be support examples of an image
+                if not extract_feature:
+                    img_ne = {d["id"]: d["not_exhaustive_category_ids"] for d in anns["images"]}
+                    anns["annotations"] = [v for v in anns["annotations"] if v["category_id"] not in img_ne[v["image_id"]]]
+
+                # the file_name field in the lvis val dataset is broken
+                replace_file_name = lambda x: (x["file_name"].split("_")[2])
+                if "_" in anns["images"][0]:
+                    for img in anns["images"]:
+                        img.update({"file_name": replace_file_name(img)})
+
+            with open(ann_file_new, "w") as f_out:
+                json.dump(anns, f_out)
+        return ann_file_new
+
+    def preprocess_coco(self, ann_file, split):
+        ann_file_new = ann_file + "_" + str(split)
+        if not os.path.isfile(ann_file_new) and is_main_process():
+            with open(ann_file) as f_in:
+                anns = json.load(f_in)
+            if split == 5: #voc non-voc
+                if not self.is_train:
+                    pass
+                else:
+                    voc_inds = (0, 1, 2, 3, 4, 5, 6, 8, 14, 15, 16, 17, 18, 19, 39, 56, 57, 58, 60, 62)
+                    split_cat = [a["id"] for i, a in enumerate(anns["categories"]) if not i in voc_inds]
+            else:
+                if not self.is_train:
+                    split_cat = [a["id"] for i, a in enumerate(anns["categories"]) if i % 4 == (split-1)]
+                else:
+                    split_cat = [a["id"] for i, a in enumerate(anns["categories"]) if not i % 4 == (split-1)]
+            anns["annotations"] = [v for v in anns['annotations'] if v["category_id"] in split_cat]
+            with open(ann_file_new, "w") as f_out:
+                json.dump(anns, f_out)
+
+        return ann_file_new
+
     def __getitem__(self, idx):
         img, anno = super(COCODataset, self).__getitem__(idx)
 
         # filter crowd annotations
         # TODO might be better to add an extra field
-        anno = [obj for obj in anno if obj["iscrowd"] == 0]
+        if not self.is_lvis:
+            anno = [obj for obj in anno if obj["iscrowd"] == 0]
 
         boxes = [obj["bbox"] for obj in anno]
         boxes = torch.as_tensor(boxes).reshape(-1, 4)  # guard against no boxes

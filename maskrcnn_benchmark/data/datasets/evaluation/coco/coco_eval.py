@@ -56,9 +56,14 @@ def do_coco_evaluation(
             file_path = f.name
             if output_folder:
                 file_path = os.path.join(output_folder, iou_type + ".json")
-            res = evaluate_predictions_on_coco(
-                dataset.coco, coco_results[iou_type], file_path, iou_type
-            )
+            if dataset.is_lvis:
+                res = evaluate_predictions_on_lvis(
+                coco_results[iou_type], file_path, dataset.ann_file, iou_type)
+            else:
+                res = evaluate_predictions_on_coco(
+                    dataset.coco, coco_results[iou_type], file_path, iou_type
+                )
+
             results.update(res)
     logger.info(results)
     check_expected_results(results, expected_results, expected_results_sigma_tol)
@@ -322,6 +327,17 @@ def evaluate_predictions_on_coco(
     coco_eval.summarize()
     return coco_eval
 
+def evaluate_predictions_on_lvis(coco_results, result_path, annotation_path, iou_type):
+    import json
+
+    with open(result_path, "w") as f:
+        json.dump(coco_results, f)
+
+    from lvis import LVIS, LVISEval
+    lvis_eval = LVISEval(annotation_path, result_path, iou_type)
+    lvis_eval.run()
+    lvis_eval.print_results()
+    return lvis_eval
 
 class COCOResults(object):
     METRICS = {
@@ -354,14 +370,19 @@ class COCOResults(object):
         if coco_eval is None:
             return
         from pycocotools.cocoeval import COCOeval
-
-        assert isinstance(coco_eval, COCOeval)
-        s = coco_eval.stats
-        iou_type = coco_eval.params.iouType
-        res = self.results[iou_type]
-        metrics = COCOResults.METRICS[iou_type]
-        for idx, metric in enumerate(metrics):
-            res[metric] = s[idx]
+        from lvis import LVISEval
+        if isinstance(coco_eval, COCOeval):
+            s = coco_eval.stats
+            iou_type = coco_eval.params.iouType
+            res = self.results[iou_type]
+            metrics = COCOResults.METRICS[iou_type]
+            for idx, metric in enumerate(metrics):
+                res[metric] = s[idx]
+        elif isinstance(coco_eval, LVISEval):
+            iou_type = coco_eval.params.iou_type
+            self.results[iou_type] = coco_eval.results
+        else:
+            raise RuntimeError("Evaluation type not support: {}".format(type(coco_eval)))
 
     def __repr__(self):
         results = '\n'

@@ -156,6 +156,7 @@ class QuerySupportSampler(BatchSampler):
         support_imgs = [self.dataset.img_to_id_map[i]
                         for i in support_imgs]
         support_imgs = torch.tensor(support_imgs)
+        # resample if query and support are the same image
         same_img_idx = (support_imgs == sampled_ids)
         if same_img_idx.sum() > 0:
             support_imgs[same_img_idx] = self.sample_support_images(

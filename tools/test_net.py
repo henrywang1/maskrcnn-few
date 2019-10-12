@@ -105,7 +105,8 @@ def main():
             expected_results=cfg.TEST.EXPECTED_RESULTS,
             expected_results_sigma_tol=cfg.TEST.EXPECTED_RESULTS_SIGMA_TOL,
             output_folder=output_folder,
-        )
+            is_extract_feature=cfg.TEST.EXTRACT_FEATURE
+            )
         synchronize()
 
 
