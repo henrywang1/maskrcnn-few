@@ -79,6 +79,7 @@ def inference(
         expected_results=(),
         expected_results_sigma_tol=4,
         output_folder=None,
+        is_extract_feature=False
 ):
     # convert to a torch.device for efficiency
     device = torch.device(device)
@@ -108,7 +109,7 @@ def inference(
         )
     )
 
-    if not predictions: # extract feature only
+    if is_extract_feature or not predictions: # extract feature only
         return
 
     predictions = _accumulate_predictions_from_multiple_gpus(predictions)
