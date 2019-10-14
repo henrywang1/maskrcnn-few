@@ -42,11 +42,18 @@ def has_valid_annotation(anno):
 
 class COCODataset(torchvision.datasets.coco.CocoDetection):
     def __init__(
-        self, ann_file, root, remove_images_without_annotations, transforms=None, split=0, extract_feature=False
+        self,
+        ann_file,
+        root,
+        remove_images_without_annotations,
+        transforms=None,
+        split=0,
+        extract_feature=False,
+        load_mask=False
     ):
         self.is_train = remove_images_without_annotations
         self.is_lvis = "lvis" in ann_file or False
-
+        self.load_mask = load_mask
         if self.is_lvis:
             ann_file = self.preprocess_lvis(ann_file, extract_feature)
         elif split:
@@ -165,7 +172,7 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         classes = torch.tensor(classes)
         target.add_field("labels", classes)
 
-        if anno and "segmentation" in anno[0]:
+        if self.load_mask and anno and "segmentation" in anno[0]:
             masks = [obj["segmentation"] for obj in anno]
             masks = SegmentationMask(masks, img.size, mode='poly')
             target.add_field("masks", masks)

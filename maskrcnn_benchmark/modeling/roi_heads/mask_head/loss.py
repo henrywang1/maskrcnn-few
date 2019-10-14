@@ -6,6 +6,8 @@ from maskrcnn_benchmark.layers import smooth_l1_loss
 from maskrcnn_benchmark.modeling.matcher import Matcher
 from maskrcnn_benchmark.structures.boxlist_ops import boxlist_iou
 from maskrcnn_benchmark.modeling.utils import cat
+from maskrcnn_benchmark.structures.segmentation_mask import SegmentationMask
+from maskrcnn_benchmark.modeling.box_coder import BoxCoder
 
 
 def project_masks_on_boxes(segmentation_masks, proposals, discretization_size):
@@ -41,9 +43,34 @@ def project_masks_on_boxes(segmentation_masks, proposals, discretization_size):
         return torch.empty(0, dtype=torch.float32, device=device)
     return torch.stack(masks, dim=0).to(device, dtype=torch.float32)
 
+def project_boxes_on_boxes(matched_bboxes, proposals, discretization_size):
+    masks = []
+    M = discretization_size
+    original_size = proposals.size
+
+    proposals = proposals.bbox.to(torch.device("cpu"))
+    matched_bboxes = matched_bboxes.to(torch.device("cpu"))
+    # Generate segmentation masks based on matched_bboxes
+    polygons = []
+    for matched_bbox in matched_bboxes:
+        x1, y1, x2, y2 = matched_bbox[0], matched_bbox[1], matched_bbox[2], matched_bbox[3]
+        p = [[x1, y1, x1, y2, x2, y2, x2, y1]]
+        polygons.append(p)
+    segmentation_masks = SegmentationMask(polygons, original_size)
+
+    for segmentation_mask, proposal in zip(segmentation_masks, proposals):
+        # crop the masks, resize them to the desired resolution and
+        # then convert them to the tensor representation,
+        # instead of the list representation that was used
+        cropped_mask = segmentation_mask.crop(proposal)
+        scaled_mask = cropped_mask.resize((M, M))
+        mask = scaled_mask.convert(mode="mask")
+        masks.append(mask.get_mask_tensor())
+
+    return torch.stack(masks, dim=0).to(dtype=torch.float32)
 
 class MaskRCNNLossComputation(object):
-    def __init__(self, proposal_matcher, discretization_size):
+    def __init__(self, proposal_matcher, discretization_size, use_mil_loss):
         """
         Arguments:
             proposal_matcher (Matcher)
@@ -51,6 +78,20 @@ class MaskRCNNLossComputation(object):
         """
         self.proposal_matcher = proposal_matcher
         self.discretization_size = discretization_size
+        center_weight = torch.zeros((3, 3))
+        center_weight[1][1] = 1.
+        aff_weights = []
+        for i in range(3):
+            for j in range(3):
+                if i == 1 and j == 1:
+                    continue
+                weight = torch.zeros((3, 3))
+                weight[i][j] = 1.
+                aff_weights.append(center_weight - weight)
+        aff_weights = [w.view(1, 1, 3, 3).to("cuda") for w in aff_weights]
+        self.aff_weights = torch.cat(aff_weights, 0)
+        self.box_coder = BoxCoder(weights=(10., 10., 5., 5.))
+        self.use_mil_loss = use_mil_loss
 
     def match_targets_to_proposals(self, proposal, target):
         match_quality_matrix = boxlist_iou(target, proposal)
@@ -99,6 +140,34 @@ class MaskRCNNLossComputation(object):
 
         return labels, masks
 
+    def prepare_targets_cr(self, proposals):
+        # Sample both negative and positive proposals
+        # Only with per col/row labels (without mask)
+        labels = []
+        for proposals_per_image in proposals:
+
+            matched_bbox = self.box_coder.decode(proposals_per_image.get_field(
+                "regression_targets"), proposals_per_image.bbox)
+
+            M = self.discretization_size
+            pos_masks_per_image = torch.ones(len(proposals_per_image), M, M, dtype=torch.float32)
+            not_matched_idx = (proposals_per_image.get_field(
+                "regression_targets") != 0).any(1)
+            # if a box fully matched the proposal, we set all values to 1
+            # otherwise, we project the box on proposal
+            if not_matched_idx.any():
+                pos_masks_per_image[not_matched_idx] = project_boxes_on_boxes(
+                    matched_bbox[not_matched_idx], proposals_per_image[not_matched_idx], M)
+
+            pos_masks_per_image = pos_masks_per_image.cuda()
+            pos_labels = torch.cat(
+                [pos_masks_per_image.sum(2), pos_masks_per_image.sum(1)], 1)
+            pos_labels = (pos_labels > 0).float()
+
+            labels.append(pos_labels)
+
+        return labels
+
     def __call__(self, proposals, mask_logits, targets):
         """
         Arguments:
@@ -109,25 +178,38 @@ class MaskRCNNLossComputation(object):
         Return:
             mask_loss (Tensor): scalar tensor containing the loss
         """
-        labels, mask_targets = self.prepare_targets(proposals, targets)
-
-        # labels = cat(labels, dim=0)
         labels = cat([p.get_field("proto_labels") for p in proposals])
         labels = (labels > 0).long()
-        mask_targets = cat(mask_targets, dim=0)
+        pos_inds = torch.nonzero(labels > 0).squeeze(1)
+        if not self.use_mil_loss:
+            _, mask_targets = self.prepare_targets(proposals, targets)
+            mask_targets = cat(mask_targets, dim=0)
+            labels_pos = labels[pos_inds]
+            if mask_targets.numel() == 0:
+                return mask_logits.sum() * 0
+            mask_loss = F.binary_cross_entropy_with_logits(
+                mask_logits[pos_inds, labels_pos], mask_targets[pos_inds]
+            )
+            return mask_loss
 
-        positive_inds = torch.nonzero(labels > 0).squeeze(1)
-        labels_pos = labels[positive_inds]
+        mil_score = mask_logits[:, 1]
+        mil_score = torch.cat([mil_score.max(2)[0], mil_score.max(1)[0]], 1)
 
         # torch.mean (in binary_cross_entropy_with_logits) doesn't
         # accept empty tensors, so handle it separately
-        if mask_targets.numel() == 0:
+        if mil_score.numel() == 0:
             return mask_logits.sum() * 0
 
-        mask_loss = F.binary_cross_entropy_with_logits(
-            mask_logits[positive_inds, labels_pos], mask_targets[positive_inds]
-        )
-        return mask_loss
+        labels_cr = self.prepare_targets_cr(proposals)
+        labels_cr = cat(labels_cr, dim=0)
+
+        mil_loss = F.binary_cross_entropy_with_logits(mil_score[pos_inds], labels_cr[pos_inds])
+        mask_logits_n = mask_logits[:, 1:].sigmoid()
+
+        aff_maps = F.conv2d(mask_logits_n, self.aff_weights, padding=(1, 1))
+        affinity_loss = mask_logits_n*(aff_maps**2)
+        affinity_loss = torch.mean(affinity_loss)
+        return 1.2 * mil_loss + 0.05* affinity_loss
 
 
 def make_roi_mask_loss_evaluator(cfg):
@@ -138,7 +220,9 @@ def make_roi_mask_loss_evaluator(cfg):
     )
 
     loss_evaluator = MaskRCNNLossComputation(
-        matcher, cfg.MODEL.ROI_MASK_HEAD.RESOLUTION
+        matcher,
+        cfg.MODEL.ROI_MASK_HEAD.RESOLUTION,
+        cfg.MODEL.ROI_MASK_HEAD.USE_MIL_LOSS
     )
 
     return loss_evaluator
