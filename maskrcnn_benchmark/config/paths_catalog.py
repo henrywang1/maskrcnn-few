@@ -95,6 +95,10 @@ class DatasetCatalog(object):
             "img_dir": "voc/VOC2012/JPEGImages",
             "ann_file": "voc/VOC2012/Annotations/pascal_val2012.json"
         },
+        "voc_2012_instance_val_cocostyle": {
+            "img_dir": "voc/VOC2012/JPEGImages",
+            "ann_file": "voc/VOC2012/Annotations/pascal_val2012_instance.json"
+        },
         "voc_2012_test": {
             "data_dir": "voc/VOC2012",
             "split": "test"

@@ -128,16 +128,15 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         return ann_file_new
 
     def preprocess_coco(self, ann_file, split):
+        if split == 5 and not self.is_train:
+            return ann_file
         ann_file_new = ann_file + "_" + str(split)
         if not os.path.isfile(ann_file_new) and is_main_process():
             with open(ann_file) as f_in:
                 anns = json.load(f_in)
             if split == 5: #voc non-voc
-                if not self.is_train:
-                    pass
-                else:
-                    voc_inds = (0, 1, 2, 3, 4, 5, 6, 8, 14, 15, 16, 17, 18, 19, 39, 56, 57, 58, 60, 62)
-                    split_cat = [a["id"] for i, a in enumerate(anns["categories"]) if not i in voc_inds]
+                voc_inds = (0, 1, 2, 3, 4, 5, 6, 8, 14, 15, 16, 17, 18, 19, 39, 56, 57, 58, 60, 62)
+                split_cat = [a["id"] for i, a in enumerate(anns["categories"]) if not i in voc_inds]
             else:
                 if not self.is_train:
                     split_cat = [a["id"] for i, a in enumerate(anns["categories"]) if i % 4 == (split-1)]
