@@ -1,8 +1,8 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
+import logging
 import torch
 from torch.nn import functional as F
 
-from maskrcnn_benchmark.layers import smooth_l1_loss
 from maskrcnn_benchmark.modeling.matcher import Matcher
 from maskrcnn_benchmark.structures.boxlist_ops import boxlist_iou
 from maskrcnn_benchmark.modeling.utils import cat
@@ -63,9 +63,17 @@ def project_boxes_on_boxes(matched_bboxes, proposals, discretization_size):
         # then convert them to the tensor representation,
         # instead of the list representation that was used
         cropped_mask = segmentation_mask.crop(proposal)
-        scaled_mask = cropped_mask.resize((M, M))
-        mask = scaled_mask.convert(mode="mask")
-        masks.append(mask.get_mask_tensor())
+        size = cropped_mask.size
+        # LVIS dataset could have tiny boxes
+        if size[0] > 1e-2 and size[1] > 1e-2:
+            scaled_mask = cropped_mask.resize((M, M))
+            mask = scaled_mask.convert(mode="mask")
+            mask_tensor = mask.get_mask_tensor()
+        else:
+            logger = logging.getLogger("maskrcnn_benchmark.trainer")
+            logger.warning("%s is too small", cropped_mask)
+            mask_tensor = torch.zeros((28, 28), dtype=torch.uint8)
+        masks.append(mask_tensor)
 
     return torch.stack(masks, dim=0).to(dtype=torch.float32)
 

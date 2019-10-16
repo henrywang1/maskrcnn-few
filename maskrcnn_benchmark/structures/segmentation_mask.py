@@ -5,6 +5,7 @@ import numpy as np
 from maskrcnn_benchmark.layers.misc import interpolate
 from maskrcnn_benchmark.utils import cv2_util
 import pycocotools.mask as mask_utils
+import logging
 
 # transpose
 FLIP_LEFT_RIGHT = 0
@@ -276,6 +277,18 @@ class PolygonInstance(object):
         # box is assumed to be xyxy
         current_width, current_height = self.size
         xmin, ymin, xmax, ymax = map(float, box)
+        # File "maskrcnn-few/maskrcnn_benchmark/structures/segmentation_mask.py", line 280, in crop
+        # assert xmin <= xmax and ymin <= ymax, str(box)
+        # some of the tiny boxes could cause error (possible caused by float precision)
+        if xmin > xmax:
+            logger = logging.getLogger("maskrcnn_benchmark.trainer")
+            logger.warning("%s, xmin > xmax", str(box))
+            xmin = xmax
+
+        if ymin > ymax:
+            logger = logging.getLogger("maskrcnn_benchmark.trainer")
+            logger.warning("%s, ymin > ymax", str(box))
+            ymin = ymax
 
         assert xmin <= xmax and ymin <= ymax, str(box)
         xmin = min(max(xmin, 0), current_width - 1)
