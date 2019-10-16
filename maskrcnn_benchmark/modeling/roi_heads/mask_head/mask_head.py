@@ -42,6 +42,10 @@ class ROIMaskHead(torch.nn.Module):
             cfg, self.feature_extractor.out_channels)
         self.post_processor = make_roi_mask_post_processor(cfg)
         self.loss_evaluator = make_roi_mask_loss_evaluator(cfg)
+        self.use_corr = cfg.MODEL.ROI_MASK_HEAD.USE_CORR
+        if self.use_corr:
+            self.predictor_corr = make_roi_mask_predictor(
+                cfg, self.feature_extractor.out_channels)
 
     def forward(self, features, proposals, targets=None, meta_data=None):
         """
@@ -69,12 +73,19 @@ class ROIMaskHead(torch.nn.Module):
         else:
             x = self.feature_extractor(features, proposals, meta_data)
         mask_logits = self.predictor(x)
+        if self.use_corr:
+            x2 = self.feature_extractor(features, proposals, meta_data, use_corr=True)
+            mask_logits_corr = self.predictor_corr(x2)
+        else:
+            mask_logits_corr = None
 
         if not self.training:
+            if self.use_corr:
+                mask_logits += mask_logits_corr
             result = self.post_processor(mask_logits, proposals)
             return x, result, {}
 
-        loss_mask = self.loss_evaluator(proposals, mask_logits, targets)
+        loss_mask = self.loss_evaluator(proposals, mask_logits, targets, mask_logits_corr)
 
         return x, all_proposals, dict(loss_mask=loss_mask)
 

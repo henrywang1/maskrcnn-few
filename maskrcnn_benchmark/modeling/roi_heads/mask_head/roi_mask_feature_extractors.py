@@ -57,25 +57,58 @@ class MaskRCNNFPNFeatureExtractor(nn.Module):
             self.blocks.append(layer_name)
         self.out_channels = layer_features
 
-    def forward(self, x, proposals, meta_data):
+        self.use_two_branch = cfg.MODEL.ROI_MASK_HEAD.USE_CORR        
+        if self.use_two_branch:
+            self.blocks_corr = []
+            for layer_idx, layer_features in enumerate(layers, 1):
+                layer_name = "mask_fcn_corr{}".format(layer_idx)
+                input_feature = next_feature if layer_idx > 1 else resolution**2
+                module = make_conv3x3(
+                    input_feature, layer_features,
+                    dilation=dilation, stride=1, use_gn=use_gn
+                )
+                self.add_module(layer_name, module)
+                next_feature = layer_features
+                self.blocks_corr.append(layer_name)
+
+            self.feature_l2_norm = FeatureL2Norm()
+            self.feature_correlation = FeatureCorrelation()
+
+    def forward(self, x, proposals, meta_data, use_corr=False):
         x = self.pooler(x, proposals)
         roi_q, roi_s = meta_data["roi_mask"]
-        roi_s = F.adaptive_avg_pool2d(roi_s, 1) if roi_s.numel() else roi_s
         proto_labels = [p.get_field("proto_labels") for p in proposals]
+        if not use_corr:
+            blocks = self.blocks
+            roi_s = F.adaptive_avg_pool2d(roi_s, 1) if roi_s.numel() else roi_s
+            if x.numel():
+                proto_labels_q = proto_labels[0] - 1
+                roi_s = roi_s[proto_labels_q]
+                if self.training:
+                    roi_q = F.adaptive_avg_pool2d(roi_q, 1) if roi_q.numel() else roi_q
+                    proto_labels_s = proto_labels[1] - 1
+                    roi_q = roi_q[proto_labels_s]
+                    roi = torch.cat([roi_s, roi_q])
+                    x = x * roi
+                else:
+                    x = x * roi_s
+        else:
+            blocks = self.blocks_corr
+            if x.numel():
+                proto_labels_q = proto_labels[0] - 1
+                roi_s = roi_s[proto_labels_q]
+                if self.training:
+                    proto_labels_s = proto_labels[1] - 1
+                    roi_q = roi_q[proto_labels_s]
+                    roi = torch.cat([roi_s, roi_q])
+                else:
+                    roi = roi_s
+                x = self.feature_l2_norm(x)
+                roi = self.feature_l2_norm(roi)
+                x = self.feature_correlation(x, roi)
+                x = self.feature_l2_norm(F.relu(x))
 
-        if x.numel():
-            proto_labels_q = proto_labels[0] - 1
-            roi_s = roi_s[proto_labels_q]
-            if self.training:
-                roi_q = F.adaptive_avg_pool2d(roi_q, 1) if roi_q.numel() else roi_q
-                proto_labels_s = proto_labels[1] - 1
-                roi_q = roi_q[proto_labels_s]
-                roi = torch.cat([roi_s, roi_q])
-                x = x * roi
-            else:
-                x = x * roi_s
-
-        for layer_name in self.blocks:
+        for layer_name in blocks:
             x = F.relu(getattr(self, layer_name)(x))
         return x
 
@@ -85,3 +118,29 @@ def make_roi_mask_feature_extractor(cfg, in_channels):
         cfg.MODEL.ROI_MASK_HEAD.FEATURE_EXTRACTOR
     ]
     return func(cfg, in_channels)
+
+
+class FeatureL2Norm(torch.nn.Module):
+    def __init__(self):
+        super(FeatureL2Norm, self).__init__()
+
+    def forward(self, feature):
+        epsilon = 1e-6
+        norm = torch.pow(torch.sum(torch.pow(feature, 2), 1) +
+                         epsilon, 0.5).unsqueeze(1).expand_as(feature)
+        return torch.div(feature, norm)
+
+class FeatureCorrelation(torch.nn.Module):
+    def __init__(self):
+        super(FeatureCorrelation, self).__init__()
+
+    def forward(self, feature_A, feature_B):
+        b, c, h, w = feature_A.size()
+        # reshape features for matrix multiplication
+        feature_A = feature_A.transpose(2, 3).contiguous().view(b, c, h * w)
+        feature_B = feature_B.view(b, c, h * w).transpose(1, 2)
+        # perform matrix mult.
+        feature_mul = torch.bmm(feature_B, feature_A)
+        correlation_tensor = feature_mul.view(
+            b, h, w, h * w).transpose(2, 3).transpose(1, 2)
+        return correlation_tensor
