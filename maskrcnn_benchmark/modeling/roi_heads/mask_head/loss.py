@@ -212,6 +212,11 @@ class MaskRCNNLossComputation(object):
         mil_loss = F.binary_cross_entropy_with_logits(
             mil_score[pos_inds], labels_cr[pos_inds])
 
+        mask_logits_n = mask_logits[:, 1:].sigmoid()
+        aff_maps = F.conv2d(mask_logits_n, self.aff_weights, padding=(1, 1))
+        affinity_loss = mask_logits_n * (aff_maps**2)
+        affinity_loss = torch.mean(affinity_loss)
+
         if mask_logits_corr is not None:
             mil_score_corr = mask_logits_corr[:, 1]
             mil_score_corr = torch.cat(
@@ -219,12 +224,13 @@ class MaskRCNNLossComputation(object):
             mil_loss_corr = F.binary_cross_entropy_with_logits(
                 mil_score_corr[pos_inds], labels_cr[pos_inds])
             mil_loss = mil_loss + mil_loss_corr
-            mask_logits = mask_logits + mask_logits_corr
 
-        mask_logits_n = mask_logits[:, 1:].sigmoid()
-        aff_maps = F.conv2d(mask_logits_n, self.aff_weights, padding=(1, 1))
-        affinity_loss = mask_logits_n*(aff_maps**2)
-        affinity_loss = torch.mean(affinity_loss)
+            mask_logits_n_corr = mask_logits_corr[:, 1:].sigmoid()
+            aff_maps = F.conv2d(mask_logits_n_corr, self.aff_weights, padding=(1, 1))
+            affinity_loss_corr = mask_logits_n_corr * (aff_maps**2)
+            affinity_loss_corr = torch.mean(affinity_loss_corr)
+            affinity_loss = affinity_loss + affinity_loss_corr
+
         return 1.2 * mil_loss + 0.05* affinity_loss
 
 
