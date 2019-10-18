@@ -3,7 +3,7 @@ import torch
 from torch import nn
 
 from maskrcnn_benchmark.structures.bounding_box import BoxList
-
+from maskrcnn_benchmark.modeling.make_layers import make_fc
 from .roi_mask_feature_extractors import make_roi_mask_feature_extractor
 from .roi_mask_predictors import make_roi_mask_predictor
 from .inference import make_roi_mask_post_processor
@@ -37,15 +37,19 @@ class ROIMaskHead(torch.nn.Module):
     def __init__(self, cfg, in_channels):
         super(ROIMaskHead, self).__init__()
         self.cfg = cfg.clone()
-        self.feature_extractor = make_roi_mask_feature_extractor(cfg, in_channels)
-        self.predictor = make_roi_mask_predictor(
-            cfg, self.feature_extractor.out_channels)
+        self.use_corr = cfg.MODEL.ROI_MASK_HEAD.USE_CORR and cfg.MODEL.ROI_MASK_HEAD.USE_MIL_LOSS
+        self.use_mlp = cfg.MODEL.ROI_MASK_HEAD.USE_MLP and cfg.MODEL.ROI_MASK_HEAD.USE_MIL_LOSS
+        self.feature_extractor = make_roi_mask_feature_extractor(cfg, in_channels, extract_type="avg")
+        self.predictor = make_roi_mask_predictor(cfg, self.feature_extractor.out_channels)
+        if self.use_corr:
+            self.feature_extractor_corr = make_roi_mask_feature_extractor(cfg, in_channels, extract_type="corr")
+            self.predictor_corr = make_roi_mask_predictor(cfg, self.feature_extractor.out_channels)
+        if self.use_mlp:
+            self.feature_extractor_mlp = make_roi_mask_feature_extractor(cfg, in_channels, extract_type="mlp")
+            self.predictor_mlp = make_fc(self.feature_extractor.out_channels*14*14, 2*28*28)
+
         self.post_processor = make_roi_mask_post_processor(cfg)
         self.loss_evaluator = make_roi_mask_loss_evaluator(cfg)
-        self.use_corr = cfg.MODEL.ROI_MASK_HEAD.USE_CORR
-        if self.use_corr:
-            self.predictor_corr = make_roi_mask_predictor(
-                cfg, self.feature_extractor.out_channels)
 
     def forward(self, features, proposals, targets=None, meta_data=None):
         """
@@ -73,19 +77,26 @@ class ROIMaskHead(torch.nn.Module):
         else:
             x = self.feature_extractor(features, proposals, meta_data)
         mask_logits = self.predictor(x)
+        all_mask_logits = []
+        all_mask_logits.append(mask_logits)
         if self.use_corr:
-            x2 = self.feature_extractor(features, proposals, meta_data, use_corr=True)
-            mask_logits_corr = self.predictor_corr(x2)
-        else:
-            mask_logits_corr = None
+            x = self.feature_extractor_corr(features, proposals, meta_data)
+            mask_logits_corr = self.predictor_corr(x)
+            all_mask_logits.append(mask_logits_corr)
+        if self.use_mlp:
+            x = self.feature_extractor_mlp(features, proposals, meta_data)
+            b, c, h, w = x.shape
+            mask_logits_mlp = self.predictor_mlp(x.view(b, -1))
+            mask_logits_mlp = mask_logits_mlp.view(b, 2, 28, 28)
+            all_mask_logits.append(mask_logits_mlp)
 
         if not self.training:
-            if self.use_corr:
-                mask_logits += mask_logits_corr
-            result = self.post_processor(mask_logits, proposals)
+            all_mask_logits = torch.stack([all_mask_logits])
+            all_mask_logits = torch.sum(all_mask_logits)
+            result = self.post_processor(all_mask_logits, proposals)
             return x, result, {}
 
-        loss_mask = self.loss_evaluator(proposals, mask_logits, targets, mask_logits_corr)
+        loss_mask = self.loss_evaluator(proposals, all_mask_logits, targets)
 
         return x, all_proposals, dict(loss_mask=loss_mask)
 
