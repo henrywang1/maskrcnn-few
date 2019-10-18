@@ -20,7 +20,7 @@ class MaskRCNNFPNFeatureExtractor(nn.Module):
     Heads for FPN for classification
     """
 
-    def __init__(self, cfg, in_channels):
+    def __init__(self, cfg, in_channels, extract_type="avg"):
         """
         Arguments:
             num_classes (int): number of output classes
@@ -43,43 +43,39 @@ class MaskRCNNFPNFeatureExtractor(nn.Module):
         use_gn = cfg.MODEL.ROI_MASK_HEAD.USE_GN
         layers = cfg.MODEL.ROI_MASK_HEAD.CONV_LAYERS
         dilation = cfg.MODEL.ROI_MASK_HEAD.DILATION
-
+        self.extract_type = extract_type
         next_feature = input_size
         self.blocks = []
         for layer_idx, layer_features in enumerate(layers, 1):
             layer_name = "mask_fcn{}".format(layer_idx)
+            if self.extract_type == "corr" and layer_idx == 1:
+                input_feature = resolution**2
+            else:
+                input_feature = next_feature
             module = make_conv3x3(
-                next_feature, layer_features,
+                input_feature, layer_features,
                 dilation=dilation, stride=1, use_gn=use_gn
             )
             self.add_module(layer_name, module)
-            next_feature = layer_features
+            input_feature = layer_features
             self.blocks.append(layer_name)
         self.out_channels = layer_features
-
-        self.use_two_branch = cfg.MODEL.ROI_MASK_HEAD.USE_CORR        
-        if self.use_two_branch:
-            self.blocks_corr = []
-            for layer_idx, layer_features in enumerate(layers, 1):
-                layer_name = "mask_fcn_corr{}".format(layer_idx)
-                input_feature = next_feature if layer_idx > 1 else resolution**2
-                module = make_conv3x3(
-                    input_feature, layer_features,
-                    dilation=dilation, stride=1, use_gn=use_gn
-                )
-                self.add_module(layer_name, module)
-                next_feature = layer_features
-                self.blocks_corr.append(layer_name)
-
+        if extract_type == "corr":
             self.feature_l2_norm = FeatureL2Norm()
             self.feature_correlation = FeatureCorrelation()
 
-    def forward(self, x, proposals, meta_data, use_corr=False):
+
+    def forward(self, x, proposals, meta_data):
+        """
+        Arguments:
+            extract_type (string): avg, mlp, corr
+        """
         x = self.pooler(x, proposals)
         roi_q, roi_s = meta_data["roi_mask"]
         proto_labels = [p.get_field("proto_labels") for p in proposals]
-        if not use_corr:
-            blocks = self.blocks
+        if self.extract_type == "mlp":
+            pass
+        elif self.extract_type == "avg":
             roi_s = F.adaptive_avg_pool2d(roi_s, 1) if roi_s.numel() else roi_s
             if x.numel():
                 proto_labels_q = proto_labels[0] - 1
@@ -89,11 +85,10 @@ class MaskRCNNFPNFeatureExtractor(nn.Module):
                     proto_labels_s = proto_labels[1] - 1
                     roi_q = roi_q[proto_labels_s]
                     roi = torch.cat([roi_s, roi_q])
-                    x = x * roi
                 else:
-                    x = x * roi_s
-        else:
-            blocks = self.blocks_corr
+                    roi = roi_s
+                x = x * roi
+        elif self.extract_type == "corr":
             if x.numel():
                 proto_labels_q = proto_labels[0] - 1
                 roi_s = roi_s[proto_labels_q]
@@ -107,17 +102,19 @@ class MaskRCNNFPNFeatureExtractor(nn.Module):
                 roi = self.feature_l2_norm(roi)
                 x = self.feature_correlation(x, roi)
                 x = self.feature_l2_norm(F.relu(x))
+        else:
+            raise NotImplementedError
 
-        for layer_name in blocks:
+        for layer_name in self.blocks:
             x = F.relu(getattr(self, layer_name)(x))
         return x
 
 
-def make_roi_mask_feature_extractor(cfg, in_channels):
+def make_roi_mask_feature_extractor(cfg, in_channels, extract_type="avg"):
     func = registry.ROI_MASK_FEATURE_EXTRACTORS[
         cfg.MODEL.ROI_MASK_HEAD.FEATURE_EXTRACTOR
     ]
-    return func(cfg, in_channels)
+    return func(cfg, in_channels, extract_type)
 
 
 class FeatureL2Norm(torch.nn.Module):
