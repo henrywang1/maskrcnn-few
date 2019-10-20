@@ -91,8 +91,7 @@ class ROIMaskHead(torch.nn.Module):
             all_mask_logits.append(mask_logits_mlp)
 
         if not self.training:
-            all_mask_logits = torch.stack([all_mask_logits])
-            all_mask_logits = torch.sum(all_mask_logits)
+            all_mask_logits = torch.stack(all_mask_logits).sum(0)
             result = self.post_processor(all_mask_logits, proposals)
             return x, result, {}
 

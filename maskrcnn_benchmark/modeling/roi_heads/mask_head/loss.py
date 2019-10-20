@@ -216,12 +216,12 @@ class MaskRCNNLossComputation(object):
                 mil_score[pos_inds], labels_cr[pos_inds])
             mil_losses.append(mil_loss)
 
-        # mask_logits_n = mask_logits[:, 1:].sigmoid()
-        # aff_maps = F.conv2d(mask_logits_n, self.aff_weights, padding=(1, 1))
-        # affinity_loss = mask_logits_n * (aff_maps**2)
-        # affinity_loss = torch.mean(affinity_loss)
-        return sum(mil_losses)
-        # return 1.2 * mil_loss + 0.05* affinity_loss
+        mask_logits = torch.stack(all_mask_logits).sum(0)
+        mask_logits_n = mask_logits[:, 1:].sigmoid()
+        aff_maps = F.conv2d(mask_logits_n, self.aff_weights, padding=(1, 1))
+        affinity_loss = mask_logits_n * (aff_maps**2)
+        affinity_loss = torch.mean(affinity_loss)
+        return 1.2*sum(mil_losses)/len(mil_losses) + 0.05*affinity_loss
 
 
 def make_roi_mask_loss_evaluator(cfg):
