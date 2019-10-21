@@ -100,7 +100,7 @@ class MaskRCNNFPNFeatureExtractor(nn.Module):
                     roi = roi_s
                 x = self.feature_l2_norm(x)
                 roi = self.feature_l2_norm(roi)
-                x = self.feature_correlation(x, roi)
+                x = self.feature_correlation(roi, x)
                 x = self.feature_l2_norm(F.relu(x))
         else:
             raise NotImplementedError
