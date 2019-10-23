@@ -27,16 +27,25 @@ def main():
     log_folder = pathlib.Path(args.folder)
     box_results = []
     segm_results = []
+    apr = []
+    apc = []
     for path in log_folder.glob("*.pth"):
         log = torch.load(path)
-        # box_results.append(log.results["bbox"]["AP50"])
+        box_results.append(log.results["bbox"]["AP50"])
         if "segm" in log.results.keys():
             segm_results.append(log.results["segm"]["AP50"])
+            apr.append(log.results["segm"]["APr"])
+            apc.append(log.results["segm"]["APc"])
+
 
     if box_results:
         print(mean_confidence_interval(box_results))
     if segm_results:
         print(mean_confidence_interval(segm_results))
+    if apc:
+        print(mean_confidence_interval(apc))
+    if apr:
+        print(mean_confidence_interval(apr))
 
 if __name__ == "__main__":
     main()

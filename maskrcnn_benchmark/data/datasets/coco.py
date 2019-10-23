@@ -73,10 +73,12 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         # filter images without detection annotations
         if remove_images_without_annotations:
             ids = []
+            num_of_anno = []
             for img_id in self.ids:
                 ann_ids = self.coco.getAnnIds(imgIds=img_id, iscrowd=None)
                 anno = self.coco.loadAnns(ann_ids)
-                if has_valid_annotation(anno):
+                if len(anno) < 350 and has_valid_annotation(anno):
+                    num_of_anno.append(len(anno))
                     ids.append(img_id)
                     img_cids = list(set(ann["category_id"] for ann in anno))
                     assert img_cids
@@ -84,9 +86,7 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
                     for c in img_cids:
                         class_fractions[c] += 1
                         self.cls_img[c].append(img_id)
-
             self.ids = ids
-
             for k, v in class_fractions.items():
                 class_fractions[k] = v/len(ids)
 
