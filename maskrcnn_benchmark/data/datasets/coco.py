@@ -126,7 +126,7 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
 
                 # the file_name field in the lvis val dataset is broken
                 replace_file_name = lambda x: (x["file_name"].split("_")[2])
-                if "_" in anns["images"][0]:
+                if "_" in anns["images"][0]["file_name"]:
                     for img in anns["images"]:
                         img.update({"file_name": replace_file_name(img)})
 
