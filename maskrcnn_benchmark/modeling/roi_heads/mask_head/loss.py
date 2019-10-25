@@ -216,7 +216,7 @@ class MaskRCNNLossComputation(object):
                 mil_score[pos_inds], labels_cr[pos_inds])
             mil_losses.append(mil_loss)
 
-        mask_logits = torch.stack(all_mask_logits).sum(0)
+        mask_logits = all_mask_logits[0]
         mask_logits_n = mask_logits[:, 1:].sigmoid()
         aff_maps = F.conv2d(mask_logits_n, self.aff_weights, padding=(1, 1))
         affinity_loss = mask_logits_n * (aff_maps**2)
