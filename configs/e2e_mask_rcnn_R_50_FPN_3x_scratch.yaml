@@ -1,7 +1,9 @@
 MODEL:
   META_ARCHITECTURE: "GeneralizedRCNN"
+  WEIGHT: "" # no pretrained model
   BACKBONE:
     CONV_BODY: "R-50-FPN"
+    FREEZE_CONV_BODY_AT: 0 # finetune all layers
   RESNETS:
     BACKBONE_OUT_CHANNELS: 256
   RPN:
