@@ -27,6 +27,7 @@ def main():
     log_folder = pathlib.Path(args.folder)
     box_results = []
     segm_results = []
+
     ap = []
     ap50 = []
     ap75 = []
