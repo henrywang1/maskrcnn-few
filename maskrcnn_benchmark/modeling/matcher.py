@@ -91,9 +91,20 @@ class Matcher(object):
         # For each gt, find the prediction with which it has highest quality
         highest_quality_foreach_gt, _ = match_quality_matrix.max(dim=1)
         # Find highest quality match available, even if it is low, including ties
-        gt_pred_pairs_of_highest_quality = torch.nonzero(
-            match_quality_matrix == highest_quality_foreach_gt[:, None]
-        )
+        chunk_size = 50
+        if len(highest_quality_foreach_gt) > chunk_size:
+            gt_pred_pairs_of_highest_quality = []
+            for i in range(0, len(highest_quality_foreach_gt), chunk_size):
+                left = match_quality_matrix[i:i+chunk_size]
+                right = highest_quality_foreach_gt[i:i+chunk_size, None]
+                high_quality = torch.nonzero(left == right)# + i
+                high_quality[:, 0] += i
+                gt_pred_pairs_of_highest_quality.append(high_quality)
+            gt_pred_pairs_of_highest_quality = torch.cat(gt_pred_pairs_of_highest_quality, 0)
+        else:
+            gt_pred_pairs_of_highest_quality = torch.nonzero(
+                match_quality_matrix == highest_quality_foreach_gt[:, None]
+            )
         # Example gt_pred_pairs_of_highest_quality:
         #   tensor([[    0, 39796],
         #           [    1, 32055],

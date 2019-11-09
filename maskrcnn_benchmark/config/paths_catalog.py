@@ -15,6 +15,10 @@ class DatasetCatalog(object):
             "img_dir": "coco/val2017",
             "ann_file": "lvis/annotations/lvis_v0.5_val.json"
         },
+        "coco_2017_mcg_train": {
+            "img_dir": "coco/train2017",
+            "ann_file": "coco/annotations/coco_train_mcg.json"
+        },        
         "coco_2017_train": {
             "img_dir": "coco/train2017",
             "ann_file": "coco/annotations/instances_train2017.json"

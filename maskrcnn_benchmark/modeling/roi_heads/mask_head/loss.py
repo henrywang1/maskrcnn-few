@@ -176,7 +176,7 @@ class MaskRCNNLossComputation(object):
 
         return labels
 
-    def __call__(self, proposals, mask_logits, targets):
+    def __call__(self, proposals, all_mask_logits, targets):
         """
         Arguments:
             proposals (list[BoxList])
@@ -190,6 +190,7 @@ class MaskRCNNLossComputation(object):
         labels = (labels > 0).long()
         pos_inds = torch.nonzero(labels > 0).squeeze(1)
         if not self.use_mil_loss:
+            mask_logits = all_mask_logits[0]
             _, mask_targets = self.prepare_targets(proposals, targets)
             mask_targets = cat(mask_targets, dim=0)
             labels_pos = labels[pos_inds]
@@ -199,25 +200,28 @@ class MaskRCNNLossComputation(object):
                 mask_logits[pos_inds, labels_pos], mask_targets[pos_inds]
             )
             return mask_loss
-
-        mil_score = mask_logits[:, 1]
-        mil_score = torch.cat([mil_score.max(2)[0], mil_score.max(1)[0]], 1)
-
-        # torch.mean (in binary_cross_entropy_with_logits) doesn't
-        # accept empty tensors, so handle it separately
-        if mil_score.numel() == 0:
-            return mask_logits.sum() * 0
-
         labels_cr = self.prepare_targets_cr(proposals)
         labels_cr = cat(labels_cr, dim=0)
+        mil_losses = []
+        for mask_logits in all_mask_logits:
 
-        mil_loss = F.binary_cross_entropy_with_logits(mil_score[pos_inds], labels_cr[pos_inds])
+            mil_score = mask_logits[:, 1]
+            mil_score = torch.cat([mil_score.max(2)[0], mil_score.max(1)[0]], 1)
+        # torch.mean (in binary_cross_entropy_with_logits) doesn't
+        # accept empty tensors, so handle it separately
+            if mil_score.numel() == 0:
+                mil_losses.append(mask_logits.sum() * 0)
+
+            mil_loss = F.binary_cross_entropy_with_logits(
+                mil_score[pos_inds], labels_cr[pos_inds])
+            mil_losses.append(mil_loss)
+
+        mask_logits = all_mask_logits[0]
         mask_logits_n = mask_logits[:, 1:].sigmoid()
-
         aff_maps = F.conv2d(mask_logits_n, self.aff_weights, padding=(1, 1))
-        affinity_loss = mask_logits_n*(aff_maps**2)
+        affinity_loss = mask_logits_n * (aff_maps**2)
         affinity_loss = torch.mean(affinity_loss)
-        return 1.2 * mil_loss + 0.05* affinity_loss
+        return 1.2*sum(mil_losses)/len(mil_losses) + 0.05*affinity_loss
 
 
 def make_roi_mask_loss_evaluator(cfg):

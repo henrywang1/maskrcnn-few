@@ -39,8 +39,17 @@ class RPNLossComputation(object):
         self.generate_labels_func = generate_labels_func
         self.discard_cases = ['not_visibility', 'between_thresholds']
 
+    def boxlist_iou_by_batch(self, target, anchor, chunk_size):
+        ret = [target[i:i+chunk_size] for i in range(0, len(target), chunk_size)]
+        ret = [boxlist_iou(chunk, anchor) for chunk in ret]
+        return cat(ret, 0)
+
     def match_targets_to_anchors(self, anchor, target, copied_fields=[]):
-        match_quality_matrix = boxlist_iou(target, anchor)
+        chunk_size = 50
+        if len(target) > chunk_size:
+            match_quality_matrix = self.boxlist_iou_by_batch(target, anchor, chunk_size)
+        else:
+            match_quality_matrix = boxlist_iou(target, anchor)
         matched_idxs = self.proposal_matcher(match_quality_matrix)
         # RPN doesn't need any fields from target
         # for creating the labels, so clear them all
