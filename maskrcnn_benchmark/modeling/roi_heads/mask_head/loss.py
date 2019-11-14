@@ -78,7 +78,7 @@ def project_boxes_on_boxes(matched_bboxes, proposals, discretization_size):
     return torch.stack(masks, dim=0).to(dtype=torch.float32)
 
 class MaskRCNNLossComputation(object):
-    def __init__(self, proposal_matcher, discretization_size, use_mil_loss):
+    def __init__(self, proposal_matcher, discretization_size, use_mil_loss, use_aff):
         """
         Arguments:
             proposal_matcher (Matcher)
@@ -100,6 +100,7 @@ class MaskRCNNLossComputation(object):
         self.aff_weights = torch.cat(aff_weights, 0)
         self.box_coder = BoxCoder(weights=(10., 10., 5., 5.))
         self.use_mil_loss = use_mil_loss
+        self.use_aff = use_aff
 
     def match_targets_to_proposals(self, proposal, target):
         match_quality_matrix = boxlist_iou(target, proposal)
@@ -216,12 +217,15 @@ class MaskRCNNLossComputation(object):
                 mil_score[pos_inds], labels_cr[pos_inds])
             mil_losses.append(mil_loss)
 
-        mask_logits = all_mask_logits[0]
-        mask_logits_n = mask_logits[:, 1:].sigmoid()
-        aff_maps = F.conv2d(mask_logits_n, self.aff_weights, padding=(1, 1))
-        affinity_loss = mask_logits_n * (aff_maps**2)
-        affinity_loss = torch.mean(affinity_loss)
-        return 1.2*sum(mil_losses)/len(mil_losses) + 0.05*affinity_loss
+        if self.use_aff:
+            mask_logits = all_mask_logits[0]
+            mask_logits_n = mask_logits[:, 1:].sigmoid()
+            aff_maps = F.conv2d(mask_logits_n, self.aff_weights, padding=(1, 1))
+            affinity_loss = mask_logits_n * (aff_maps**2)
+            affinity_loss = torch.mean(affinity_loss)
+            return 1.2*sum(mil_losses)/len(mil_losses) + 0.05*affinity_loss
+        else:
+            return sum(mil_losses)/len(mil_losses)
 
 
 def make_roi_mask_loss_evaluator(cfg):
@@ -234,7 +238,8 @@ def make_roi_mask_loss_evaluator(cfg):
     loss_evaluator = MaskRCNNLossComputation(
         matcher,
         cfg.MODEL.ROI_MASK_HEAD.RESOLUTION,
-        cfg.MODEL.ROI_MASK_HEAD.USE_MIL_LOSS
+        cfg.MODEL.ROI_MASK_HEAD.USE_MIL_LOSS,
+        cfg.MODEL.ROI_MASK_HEAD.USE_MIL_USE_AFF
     )
 
     return loss_evaluator

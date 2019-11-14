@@ -241,6 +241,7 @@ _C.MODEL.ROI_MASK_HEAD.DILATION = 1
 # GN
 _C.MODEL.ROI_MASK_HEAD.USE_GN = False
 _C.MODEL.ROI_MASK_HEAD.USE_MIL_LOSS = True
+_C.MODEL.ROI_MASK_HEAD.USE_MIL_USE_AFF = True
 _C.MODEL.ROI_MASK_HEAD.USE_CORR = False
 _C.MODEL.ROI_MASK_HEAD.USE_MLP = False
 
@@ -456,6 +457,7 @@ _C.TEST.EXTRACT_FEATURE = False
 _C.TEST.USE_FEATURE = False
 _C.TEST.SHOT = 1
 _C.TEST.WAY = 0
+_C.TEST.USE_BOX_MASK = False
 # ---------------------------------------------------------------------------- #
 # Misc options
 # ---------------------------------------------------------------------------- #

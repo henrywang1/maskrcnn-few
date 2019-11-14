@@ -50,6 +50,7 @@ class ROIMaskHead(torch.nn.Module):
 
         self.post_processor = make_roi_mask_post_processor(cfg)
         self.loss_evaluator = make_roi_mask_loss_evaluator(cfg)
+        self.use_box_mask = cfg.TEST.USE_BOX_MASK
 
     def forward(self, features, proposals, targets=None, meta_data=None):
         """
@@ -76,19 +77,24 @@ class ROIMaskHead(torch.nn.Module):
             x = x[torch.cat(positive_inds, dim=0)]
         else:
             x = self.feature_extractor(features, proposals, meta_data)
-        mask_logits = self.predictor(x)
+
+        if self.use_box_mask:
+            mask_logits = torch.ones(x.shape[0], 2, 28, 28)
+        else:
+            mask_logits = self.predictor(x)
+
         all_mask_logits = []
         all_mask_logits.append(mask_logits)
-        if self.use_corr:
-            x = self.feature_extractor_corr(features, proposals, meta_data)
-            mask_logits_corr = self.predictor_corr(x)
-            all_mask_logits.append(mask_logits_corr)
-        if self.use_mlp:
-            x = self.feature_extractor_mlp(features, proposals, meta_data)
-            b, c, h, w = x.shape
-            mask_logits_mlp = self.predictor_mlp(x.view(b, -1))
-            mask_logits_mlp = mask_logits_mlp.view(b, 2, 28, 28)
-            all_mask_logits.append(mask_logits_mlp)
+        # if self.use_corr:
+        #     x = self.feature_extractor_corr(features, proposals, meta_data)
+        #     mask_logits_corr = self.predictor_corr(x)
+        #     all_mask_logits.append(mask_logits_corr)
+        # if self.use_mlp:
+        #     x = self.feature_extractor_mlp(features, proposals, meta_data)
+        #     b, c, h, w = x.shape
+        #     mask_logits_mlp = self.predictor_mlp(x.view(b, -1))
+        #     mask_logits_mlp = mask_logits_mlp.view(b, 2, 28, 28)
+        #     all_mask_logits.append(mask_logits_mlp)
 
         if not self.training:
             result = self.post_processor(mask_logits, proposals)
