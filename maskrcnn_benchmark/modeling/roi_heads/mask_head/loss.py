@@ -8,7 +8,7 @@ from maskrcnn_benchmark.structures.boxlist_ops import boxlist_iou
 from maskrcnn_benchmark.modeling.utils import cat
 from maskrcnn_benchmark.structures.segmentation_mask import SegmentationMask
 from maskrcnn_benchmark.modeling.box_coder import BoxCoder
-
+import math
 
 def project_masks_on_boxes(segmentation_masks, proposals, discretization_size):
     """
@@ -78,7 +78,7 @@ def project_boxes_on_boxes(matched_bboxes, proposals, discretization_size):
     return torch.stack(masks, dim=0).to(dtype=torch.float32)
 
 class MaskRCNNLossComputation(object):
-    def __init__(self, proposal_matcher, discretization_size, use_mil_loss, use_aff):
+    def __init__(self, proposal_matcher, discretization_size, use_mil_loss, use_aff, expand_ratio=0):
         """
         Arguments:
             proposal_matcher (Matcher)
@@ -101,6 +101,7 @@ class MaskRCNNLossComputation(object):
         self.box_coder = BoxCoder(weights=(10., 10., 5., 5.))
         self.use_mil_loss = use_mil_loss
         self.use_aff = use_aff
+        self.expand_ratio = self.get_expand_ratio(expand_ratio)
 
     def match_targets_to_proposals(self, proposal, target):
         match_quality_matrix = boxlist_iou(target, proposal)
@@ -149,22 +150,33 @@ class MaskRCNNLossComputation(object):
 
         return labels, masks
 
+    def get_expand_ratio(self, expand_ratio):
+        r = math.sqrt(1+float(expand_ratio)/100)
+        return (1-r)/2
+
     def prepare_targets_cr(self, proposals):
         # Sample both negative and positive proposals
         # Only with per col/row labels (without mask)
         labels = []
         for proposals_per_image in proposals:
-
-            matched_bbox = self.box_coder.decode(proposals_per_image.get_field(
-                "regression_targets"), proposals_per_image.bbox)
-
+            regression_target = proposals_per_image.get_field("regression_targets")
+            matched_bbox = self.box_coder.decode(regression_target, proposals_per_image.bbox)
             M = self.discretization_size
             pos_masks_per_image = torch.ones(len(proposals_per_image), M, M, dtype=torch.float32)
-            not_matched_idx = (proposals_per_image.get_field(
-                "regression_targets") != 0).any(1)
+            if self.expand_ratio >= 0:
+                not_matched_idx = (regression_target != 0).any(1)
+            else:
+                # contract the box prior, so all regression targets need to be re-calculated
+                not_matched_idx = torch.tensor([True]*len(regression_target)).cuda()
             # if a box fully matched the proposal, we set all values to 1
             # otherwise, we project the box on proposal
             if not_matched_idx.any():
+                x_shift = (matched_bbox[not_matched_idx][:, 2] -
+                           matched_bbox[not_matched_idx][:, 0]) * self.expand_ratio
+                y_shift = (matched_bbox[not_matched_idx][:, 3] -
+                           matched_bbox[not_matched_idx][:, 1]) * self.expand_ratio
+                shift_vector = torch.stack([x_shift, y_shift, -x_shift, -y_shift], 1)
+                matched_bbox[not_matched_idx] += shift_vector
                 pos_masks_per_image[not_matched_idx] = project_boxes_on_boxes(
                     matched_bbox[not_matched_idx], proposals_per_image[not_matched_idx], M)
 
@@ -239,7 +251,8 @@ def make_roi_mask_loss_evaluator(cfg):
         matcher,
         cfg.MODEL.ROI_MASK_HEAD.RESOLUTION,
         cfg.MODEL.ROI_MASK_HEAD.USE_MIL_LOSS,
-        cfg.MODEL.ROI_MASK_HEAD.USE_MIL_USE_AFF
+        cfg.MODEL.ROI_MASK_HEAD.USE_MIL_USE_AFF,
+        cfg.MODEL.ROI_MASK_HEAD.MIL_EXP_RATIO
     )
 
     return loss_evaluator
