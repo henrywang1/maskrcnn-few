@@ -71,6 +71,8 @@ _C.DATASETS.TRAIN = ()
 # List of the dataset names for testing, as present in paths_catalog.py
 _C.DATASETS.TEST = ()
 _C.DATASETS.SPLIT = 0
+_C.DATASETS.EXP_RATIO = 0
+
 # -----------------------------------------------------------------------------
 # DataLoader
 # -----------------------------------------------------------------------------
@@ -242,7 +244,6 @@ _C.MODEL.ROI_MASK_HEAD.DILATION = 1
 _C.MODEL.ROI_MASK_HEAD.USE_GN = False
 _C.MODEL.ROI_MASK_HEAD.USE_MIL_LOSS = True
 _C.MODEL.ROI_MASK_HEAD.USE_MIL_USE_AFF = True
-_C.MODEL.ROI_MASK_HEAD.MIL_EXP_RATIO = 0
 _C.MODEL.ROI_MASK_HEAD.USE_CORR = False
 _C.MODEL.ROI_MASK_HEAD.USE_MLP = False
 

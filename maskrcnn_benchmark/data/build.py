@@ -21,7 +21,8 @@ def build_dataset(dataset_list,
                   is_train=True,
                   split=0,
                   extract_feature=False,
-                  load_mask=False
+                  load_mask=False,
+                  exp_ratio=0
                   ):
     """
     Arguments:
@@ -48,6 +49,7 @@ def build_dataset(dataset_list,
             args["split"] = split
             args["extract_feature"] = extract_feature
             args["load_mask"] = load_mask
+            args["exp_ratio"] = exp_ratio
         if data["factory"] == "PascalVOCDataset":
             args["use_difficult"] = not is_train
         args["transforms"] = transforms
@@ -166,12 +168,13 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0, is_
     DatasetCatalog = paths_catalog.DatasetCatalog
     dataset_list = cfg.DATASETS.TRAIN if is_train else cfg.DATASETS.TEST
     split = cfg.DATASETS.SPLIT
+    exp_ratio = cfg.DATASETS.EXP_RATIO
     # If bbox aug is enabled in testing, simply set transforms to None and we will apply transforms later
     transforms = None if not is_train and cfg.TEST.BBOX_AUG.ENABLED else build_transforms(cfg, is_train)
     extract_feature = cfg.TEST.EXTRACT_FEATURE
     load_mask = cfg.MODEL.MASK_ON and not cfg.MODEL.ROI_MASK_HEAD.USE_MIL_LOSS
     datasets = build_dataset(dataset_list, transforms, DatasetCatalog,
-                             is_train or is_for_period, split, extract_feature, load_mask)
+                             is_train or is_for_period, split, extract_feature, load_mask, exp_ratio)
 
     if is_train:
         # save category_id to label name mapping
