@@ -119,7 +119,7 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         self.img_to_id_map = {v: k for k, v in enumerate(self.ids)}
         self._transforms = transforms
         # area to length ratio
-        self.expand_ratio = math.sqrt(1+exp_ratio/100)
+        self.expand_ratio = math.sqrt(1 + exp_ratio / 100)
 
 
     def preprocess_lvis(self, ann_file, extract_feature):

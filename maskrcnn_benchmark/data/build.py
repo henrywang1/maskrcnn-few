@@ -172,7 +172,7 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0, is_
     # If bbox aug is enabled in testing, simply set transforms to None and we will apply transforms later
     transforms = None if not is_train and cfg.TEST.BBOX_AUG.ENABLED else build_transforms(cfg, is_train)
     extract_feature = cfg.TEST.EXTRACT_FEATURE
-    load_mask = cfg.MODEL.MASK_ON and not cfg.MODEL.ROI_MASK_HEAD.USE_MIL_LOSS
+    load_mask = cfg.MODEL.MASK_ON and not cfg.MODEL.ROI_MASK_HEAD.USE_MIL_LOSS and not cfg.MODEL.ROI_MASK_HEAD.USE_BOX_MASK
     datasets = build_dataset(dataset_list, transforms, DatasetCatalog,
                              is_train or is_for_period, split, extract_feature, load_mask, exp_ratio)
 
