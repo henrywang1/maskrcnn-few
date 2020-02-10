@@ -1,9 +1,46 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 import torch
+from torch.nn import functional as F
 
 from .box_head.box_head import build_roi_box_head
 from .mask_head.mask_head import build_roi_mask_head
 from .keypoint_head.keypoint_head import build_roi_keypoint_head
+
+
+def mask_avg_pool(fts, mask):
+    """
+    Extract foreground and background features via masked average pooling
+
+    Args:
+        fts: input features, expect shape: B x C x H' x W'
+        mask: binary mask, expect shape: B x H x W
+    """
+    fts = F.interpolate(fts, size=mask.shape[-2:], mode='bilinear')
+    # import pdb; pdb.set_trace()
+    fts = fts * mask.unsqueeze(1).expand(mask.shape[0], 256, 28, 28)
+    masked_fts = torch.sum(fts, dim=(
+        2, 3)) / (mask.sum(dim=(1, 2)) + 1e-5).unsqueeze(1).expand(mask.shape[0], 256)
+    return masked_fts
+
+
+def calculate_prototype(features, labels):
+    if not features.numel():
+        return features
+
+    unique_labels = torch.unique(labels)
+    if unique_labels.numel() == 1:
+        return features.mean(0, keepdim=True)
+
+    avg_features = [features[labels == l].mean(0) for l in unique_labels]
+    avg_features = torch.stack(avg_features)
+    return avg_features
+
+
+def prepare_roi_list(roi, targets_per_img, labels):
+    roi_q, roi_s = roi.split(targets_per_img)
+    roi_q = calculate_prototype(roi_q, labels[0])
+    roi_s = calculate_prototype(roi_s, labels[1])
+    return roi_q, roi_s
 
 
 class CombinedROIHeads(torch.nn.ModuleDict):
@@ -38,6 +75,32 @@ class CombinedROIHeads(torch.nn.ModuleDict):
             # this makes the API consistent during training and testing
             x, detections, loss_mask = self.mask(mask_features, detections, targets, meta_data)
             losses.update(loss_mask)
+
+            pos_proposals = meta_data["pos_proposals"]
+
+            pred_box_feature = self.box.feature_extractor.pooler(
+                features, pos_proposals)
+            pred_labels = [p.get_field("labels") for p in pos_proposals]
+            pred_masks = meta_data["pred_mask"]
+            pred_masks = (pred_masks == 0).long()
+            pos_proposals_length = [len(p) for p in pos_proposals]
+
+            pred_box_feature = mask_avg_pool(pred_box_feature, pred_masks)
+            pred_roi_q, pred_roi_s = prepare_roi_list(
+                pred_box_feature, pos_proposals_length, pred_labels)
+            pred_roi_q = pred_roi_q.unsqueeze(-1).unsqueeze(-1)
+            pred_roi_s = pred_roi_s.unsqueeze(-1).unsqueeze(-1)
+            meta_data["roi_box"] = (pred_roi_q, pred_roi_s)
+            meta_data["unique_labels"] = (torch.unique(
+                pred_labels[0]), torch.unique(pred_labels[1]))
+            _, _, loss_pred_box = self.box(
+                features, pos_proposals, targets, meta_data)
+
+            loss_pred_box["loss_classifier_pred"] = loss_pred_box.pop(
+                "loss_classifier") * 0.01
+            loss_pred_box["loss_box_reg_pred"] = loss_pred_box.pop(
+                "loss_box_reg") * 0.01
+            losses.update(loss_pred_box)
 
         if self.cfg.MODEL.KEYPOINT_ON:
             keypoint_features = features

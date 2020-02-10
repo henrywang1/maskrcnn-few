@@ -1,6 +1,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 import torch
 from torch import nn
+from torch.nn.functional import one_hot
 
 from maskrcnn_benchmark.structures.bounding_box import BoxList
 from maskrcnn_benchmark.modeling.make_layers import make_fc
@@ -95,7 +96,10 @@ class ROIMaskHead(torch.nn.Module):
         #     mask_logits_mlp = self.predictor_mlp(x.view(b, -1))
         #     mask_logits_mlp = mask_logits_mlp.view(b, 2, 28, 28)
         #     all_mask_logits.append(mask_logits_mlp)
-
+        disc_maps = torch.stack(
+            [one_hot(x[1].argmax(0), 28) + one_hot(x[1].argmax(1), 28) for x in mask_logits])
+        meta_data["pred_mask"] = disc_maps
+        meta_data["pos_proposals"] = proposals
         if not self.training:
             result = self.post_processor(mask_logits, proposals)
             return x, result, {}
