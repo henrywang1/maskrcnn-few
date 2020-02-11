@@ -77,27 +77,25 @@ class CombinedROIHeads(torch.nn.ModuleDict):
             losses.update(loss_mask)
             if self.training:
                 pos_proposals = meta_data["pos_proposals"]
-                pred_box_feature = self.box.feature_extractor.pooler(
+                pred_mask_feature = self.mask.feature_extractor.pooler(
                     features, pos_proposals)
+    
+                pred_masks = meta_data["pred_mask"].float()
+                pred_mask_feature = mask_avg_pool(pred_mask_feature, pred_masks)
                 pred_labels = [p.get_field("labels") for p in pos_proposals]
-                pred_masks = meta_data["pred_mask"]
-                pred_masks = (pred_masks == 0).float()
                 pos_proposals_length = [len(p) for p in pos_proposals]
-                pred_box_feature = mask_avg_pool(pred_box_feature, pred_masks)
                 pred_roi_q, pred_roi_s = prepare_roi_list(
-                    pred_box_feature, pos_proposals_length, pred_labels)
+                    pred_mask_feature, pos_proposals_length, pred_labels)
                 pred_roi_q = pred_roi_q.unsqueeze(-1).unsqueeze(-1)
                 pred_roi_s = pred_roi_s.unsqueeze(-1).unsqueeze(-1)
-                meta_data["roi_box"] = (pred_roi_q, pred_roi_s)
+                meta_data["roi_mask"] = (pred_roi_q, pred_roi_s)
                 meta_data["unique_labels"] = (torch.unique(
                     pred_labels[0]), torch.unique(pred_labels[1]))
-                _, _, loss_pred_box = self.box(
-                    features, proposals, targets, meta_data)
-                loss_pred_box["loss_classifier_pred"] = loss_pred_box.pop(
-                    "loss_classifier")
-                loss_pred_box["loss_box_reg_pred"] = loss_pred_box.pop(
-                    "loss_box_reg")
-                losses.update(loss_pred_box)
+                _, _, loss_pred_mask = self.mask(
+                    mask_features, detections, targets, meta_data)
+                loss_pred_mask["loss_pred_mask"] = loss_pred_mask.pop(
+                    "loss_mask")
+                losses.update(loss_pred_mask)
 
         if self.cfg.MODEL.KEYPOINT_ON:
             keypoint_features = features
