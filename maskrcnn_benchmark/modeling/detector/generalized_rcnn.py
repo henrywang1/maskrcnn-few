@@ -9,6 +9,8 @@ from uuid import uuid4
 
 import torch
 from torch import nn
+from torch.nn import functional as F
+import pandas as pd
 
 from maskrcnn_benchmark.structures.image_list import to_image_list
 from maskrcnn_benchmark.utils.comm import is_main_process, all_gather
@@ -16,7 +18,20 @@ from ..backbone import build_backbone
 from ..rpn.rpn import build_rpn
 from ..roi_heads.roi_heads import build_roi_heads
 
-import pandas as pd
+
+def mask_avg_pool(fts, mask):
+    """
+    Extract foreground and background features via masked average pooling
+
+    Args:
+        fts: input features, expect shape: B x C x H' x W'
+        mask: binary mask, expect shape: B x H x W
+    """
+    mask = (F.adaptive_avg_pool2d(mask.float(), fts.shape[-2:]) < 1).float()
+    fts = fts * mask.unsqueeze(1).expand(mask.shape[0], 256, fts.shape[2], fts.shape[3])
+    masked_fts = torch.sum(fts, dim=(
+        2, 3)) / (mask.sum(dim=(1, 2)) + 1e-5).unsqueeze(1).expand(mask.shape[0], 256)
+    return masked_fts
 
 class GeneralizedRCNN(nn.Module):
     """
@@ -189,6 +204,33 @@ class GeneralizedRCNN(nn.Module):
         if self.roi_heads:
             x, result, detector_losses = self.roi_heads(
                 features, proposals, targets, meta_data)
+            if self.training:
+                pos_proposals = meta_data["pos_proposals"]
+                rois_box = self.pooler_box(features, pos_proposals)
+                rois_mask = self.pooler_mask(features, pos_proposals)
+                target_per_img = [len(p) for p in pos_proposals]
+                
+                pred_masks = meta_data["pred_mask"].float()
+                pred_masks = (pred_masks == 0)
+                rois_box = mask_avg_pool(rois_box, pred_masks)
+                rois_mask = mask_avg_pool(rois_mask, pred_masks)
+                rois_box = rois_box.unsqueeze(-1).unsqueeze(-1)
+                rois_mask = rois_mask.unsqueeze(-1).unsqueeze(-1)
+
+                labels = [p.get_field("labels").long() for p in pos_proposals]
+                rois_box_q, rois_box_s = self.prepare_roi_list(
+                    rois_box, target_per_img, labels)
+                rois_mask_q, rois_mask_s = self.prepare_roi_list(
+                    rois_mask, target_per_img, labels)
+
+                meta_data = {"roi_box": (rois_box_q, rois_box_s),
+                             "roi_mask": (rois_mask_q, rois_mask_s),
+                             "unique_labels": unique_labels
+                             }
+                _, _, detector_cycle_losses = self.roi_heads(
+                    features, proposals, targets, meta_data)
+                for k in detector_cycle_losses.keys():
+                    detector_cycle_losses[k + "_pred"] = detector_cycle_losses.pop(k)
         else:
             # RPN-only models don't have roi_heads
             x = features
@@ -199,6 +241,8 @@ class GeneralizedRCNN(nn.Module):
             losses = {}
             losses.update(detector_losses)
             losses.update(proposal_losses)
+            losses.update(detector_cycle_losses)
+    
             return losses
 
         return result

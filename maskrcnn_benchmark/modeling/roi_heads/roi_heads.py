@@ -7,22 +7,6 @@ from .mask_head.mask_head import build_roi_mask_head
 from .keypoint_head.keypoint_head import build_roi_keypoint_head
 
 
-def mask_avg_pool(fts, mask):
-    """
-    Extract foreground and background features via masked average pooling
-
-    Args:
-        fts: input features, expect shape: B x C x H' x W'
-        mask: binary mask, expect shape: B x H x W
-    """
-    fts = F.interpolate(fts, size=mask.shape[-2:], mode='bilinear', align_corners=False)
-    # import pdb; pdb.set_trace()
-    fts = fts * mask.unsqueeze(1).expand(mask.shape[0], 256, 28, 28)
-    masked_fts = torch.sum(fts, dim=(
-        2, 3)) / (mask.sum(dim=(1, 2)) + 1e-5).unsqueeze(1).expand(mask.shape[0], 256)
-    return masked_fts
-
-
 def calculate_prototype(features, labels):
     if not features.numel():
         return features
@@ -75,27 +59,6 @@ class CombinedROIHeads(torch.nn.ModuleDict):
             # this makes the API consistent during training and testing
             x, detections, loss_mask = self.mask(mask_features, detections, targets, meta_data)
             losses.update(loss_mask)
-            if self.training:
-                pos_proposals = meta_data["pos_proposals"]
-                pred_mask_feature = self.mask.feature_extractor.pooler(
-                    features, pos_proposals)
-    
-                pred_masks = meta_data["pred_mask"].float()
-                pred_mask_feature = mask_avg_pool(pred_mask_feature, pred_masks)
-                pred_labels = [p.get_field("labels") for p in pos_proposals]
-                pos_proposals_length = [len(p) for p in pos_proposals]
-                pred_roi_q, pred_roi_s = prepare_roi_list(
-                    pred_mask_feature, pos_proposals_length, pred_labels)
-                pred_roi_q = pred_roi_q.unsqueeze(-1).unsqueeze(-1)
-                pred_roi_s = pred_roi_s.unsqueeze(-1).unsqueeze(-1)
-                meta_data["roi_mask"] = (pred_roi_q, pred_roi_s)
-                meta_data["unique_labels"] = (torch.unique(
-                    pred_labels[0]), torch.unique(pred_labels[1]))
-                _, _, loss_pred_mask = self.mask(
-                    mask_features, detections, targets, meta_data, cycle=True)
-                loss_pred_mask["loss_pred_mask"] = loss_pred_mask.pop(
-                    "loss_mask")
-                losses.update(loss_pred_mask)
 
         if self.cfg.MODEL.KEYPOINT_ON:
             keypoint_features = features
