@@ -92,7 +92,7 @@ class CombinedROIHeads(torch.nn.ModuleDict):
                 meta_data["unique_labels"] = (torch.unique(
                     pred_labels[0]), torch.unique(pred_labels[1]))
                 _, _, loss_pred_mask = self.mask(
-                    mask_features, detections, targets, meta_data)
+                    mask_features, detections, targets, meta_data, cycle=True)
                 loss_pred_mask["loss_pred_mask"] = loss_pred_mask.pop(
                     "loss_mask")
                 losses.update(loss_pred_mask)

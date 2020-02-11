@@ -53,7 +53,7 @@ class ROIMaskHead(torch.nn.Module):
         self.loss_evaluator = make_roi_mask_loss_evaluator(cfg)
         self.use_box_mask = cfg.TEST.USE_BOX_MASK
 
-    def forward(self, features, proposals, targets=None, meta_data=None):
+    def forward(self, features, proposals, targets=None, meta_data=None, cycle=False):
         """
         Arguments:
             features (list[Tensor]): feature-maps from possibly several levels
@@ -96,10 +96,11 @@ class ROIMaskHead(torch.nn.Module):
         #     mask_logits_mlp = self.predictor_mlp(x.view(b, -1))
         #     mask_logits_mlp = mask_logits_mlp.view(b, 2, 28, 28)
         #     all_mask_logits.append(mask_logits_mlp)
-        disc_maps = torch.stack(
-            [one_hot(x[1].argmax(0), 28) + one_hot(x[1].argmax(1), 28) for x in mask_logits])
-        meta_data["pred_mask"] = disc_maps
-        meta_data["pos_proposals"] = proposals
+        if not cycle:
+            disc_maps = torch.stack(
+                [one_hot(x[1].argmax(0), 28) + one_hot(x[1].argmax(1), 28) for x in mask_logits])
+            meta_data["pred_mask"] = disc_maps
+            meta_data["pos_proposals"] = proposals
         if not self.training:
             result = self.post_processor(mask_logits, proposals)
             return x, result, {}
