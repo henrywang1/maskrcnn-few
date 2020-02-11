@@ -209,7 +209,7 @@ class GeneralizedRCNN(nn.Module):
                 rois_box = self.pooler_box(features, pos_proposals)
                 rois_mask = self.pooler_mask(features, pos_proposals)
                 target_per_img = [len(p) for p in pos_proposals]
-                
+
                 pred_masks = meta_data["pred_mask"].float()
                 pred_masks = (pred_masks == 0)
                 rois_box = mask_avg_pool(rois_box, pred_masks)
@@ -223,6 +223,7 @@ class GeneralizedRCNN(nn.Module):
                 rois_mask_q, rois_mask_s = self.prepare_roi_list(
                     rois_mask, target_per_img, labels)
 
+                unique_labels = [torch.unique(l) for l in labels]
                 meta_data = {"roi_box": (rois_box_q, rois_box_s),
                              "roi_mask": (rois_mask_q, rois_mask_s),
                              "unique_labels": unique_labels
