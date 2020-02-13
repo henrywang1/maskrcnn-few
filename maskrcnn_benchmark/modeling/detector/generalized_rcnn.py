@@ -204,34 +204,40 @@ class GeneralizedRCNN(nn.Module):
         if self.roi_heads:
             x, result, detector_losses = self.roi_heads(
                 features, proposals, targets, meta_data)
+            losses = {}
             if self.training:
-                pos_proposals = meta_data["pos_proposals"]
-                rois_box = self.pooler_box(features, pos_proposals)
-                rois_mask = self.pooler_mask(features, pos_proposals)
-                target_per_img = [len(p) for p in pos_proposals]
+                for i in range(1):  # Todo: use config
+                    pos_proposals = meta_data["pos_proposals"]
+                    gt_masks = [p.get_field("from_gt") for p in pos_proposals]
+                    pos_proposals = [p[gtm] for p, gtm in zip(pos_proposals, gt_masks)]
+                    pred_masks = [p.get_field("pred_mask") for p in pos_proposals]
+                    pred_masks = torch.cat(pred_masks)
+                    rois_box = self.pooler_box(features, pos_proposals)
+                    rois_mask = self.pooler_mask(features, pos_proposals)
 
-                pred_masks = meta_data["pred_mask"].float()
-                pred_masks = (pred_masks == 0)
-                rois_box = mask_avg_pool(rois_box, pred_masks)
-                rois_mask = mask_avg_pool(rois_mask, pred_masks)
-                rois_box = rois_box.unsqueeze(-1).unsqueeze(-1)
-                rois_mask = rois_mask.unsqueeze(-1).unsqueeze(-1)
+                    rois_box = mask_avg_pool(rois_box, pred_masks)
+                    rois_box = rois_box.unsqueeze(-1).unsqueeze(-1)
+                    rois_mask = mask_avg_pool(rois_mask, pred_masks)
+                    rois_mask = rois_mask.unsqueeze(-1).unsqueeze(-1)
 
-                labels = [p.get_field("labels").long() for p in pos_proposals]
-                rois_box_q, rois_box_s = self.prepare_roi_list(
-                    rois_box, target_per_img, labels)
-                rois_mask_q, rois_mask_s = self.prepare_roi_list(
-                    rois_mask, target_per_img, labels)
+                    labels = [p.get_field("labels").long() for p in pos_proposals]
+                    target_per_img = [len(p) for p in pos_proposals]
 
-                unique_labels = [torch.unique(l) for l in labels]
-                meta_data = {"roi_box": (rois_box_q, rois_box_s),
-                             "roi_mask": (rois_mask_q, rois_mask_s),
-                             "unique_labels": unique_labels
-                             }
-                _, _, detector_cycle_losses = self.roi_heads(
-                    features, proposals, targets, meta_data)
-                for k in detector_cycle_losses.keys():
-                    detector_cycle_losses[k + "_pred"] = detector_cycle_losses.pop(k)
+                    rois_box_q, rois_box_s = self.prepare_roi_list(
+                        rois_box, target_per_img, labels)
+                    rois_mask_q, rois_mask_s = self.prepare_roi_list(
+                        rois_mask, target_per_img, labels)
+
+                    unique_labels = [torch.unique(l) for l in labels]
+                    meta_data = {"roi_box": (rois_box_q, rois_box_s),
+                                "roi_mask": (rois_mask_q, rois_mask_s),
+                                "unique_labels": unique_labels
+                                }
+                    _, _, detector_cycle_losses = self.roi_heads(
+                        features, proposals, targets, meta_data)
+                    for k in detector_cycle_losses.keys():
+                        detector_cycle_losses[k + "_pred_" + str(i)] = detector_cycle_losses.pop(k)
+                    losses.update(detector_cycle_losses)
         else:
             # RPN-only models don't have roi_heads
             x = features
