@@ -212,6 +212,7 @@ class GeneralizedRCNN(nn.Module):
                     pos_proposals = [p[gtm] for p, gtm in zip(pos_proposals, gt_masks)]
                     pred_masks = [p.get_field("pred_mask") for p in pos_proposals]
                     pred_masks = torch.cat(pred_masks)
+                    pred_masks = (pred_masks == 0)
                     rois_box = self.pooler_box(features, pos_proposals)
                     rois_mask = self.pooler_mask(features, pos_proposals)
 
@@ -230,9 +231,9 @@ class GeneralizedRCNN(nn.Module):
 
                     unique_labels = [torch.unique(l) for l in labels]
                     meta_data = {"roi_box": (rois_box_q, rois_box_s),
-                                "roi_mask": (rois_mask_q, rois_mask_s),
-                                "unique_labels": unique_labels
-                                }
+                                 "roi_mask": (rois_mask_q, rois_mask_s),
+                                 "unique_labels": unique_labels
+                                 }
                     _, _, detector_cycle_losses = self.roi_heads(
                         features, proposals, targets, meta_data)
                     for k in detector_cycle_losses.keys():
