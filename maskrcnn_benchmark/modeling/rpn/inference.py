@@ -65,10 +65,10 @@ class RPNPostProcessor(torch.nn.Module):
         # so we need to add a dummy for objectness that's missing
         for gt_box in gt_boxes:
             gt_box.add_field("objectness", torch.ones(len(gt_box), device=device))
-            gt_box.add_field("from_gt", torch.ones(len(gt_box), dtype=bool, device=device))
+            # gt_box.add_field("from_gt", torch.ones(len(gt_box), dtype=bool, device=device))
 
-        for proposal in proposals:
-            proposal.add_field("from_gt", torch.zeros(len(proposal), dtype=bool, device=device))
+        # for proposal in proposals:
+        #   proposal.add_field("from_gt", torch.zeros(len(proposal), dtype=bool, device=device))
 
         proposals = [
             cat_boxlist((proposal, gt_box))

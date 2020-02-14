@@ -208,11 +208,11 @@ class GeneralizedRCNN(nn.Module):
             if self.training:
                 for i in range(1):  # Todo: use config
                     pos_proposals = meta_data["pos_proposals"]
-                    gt_masks = [p.get_field("from_gt") for p in pos_proposals]
-                    pos_proposals = [p[gtm] for p, gtm in zip(pos_proposals, gt_masks)]
+                    # gt_masks = [p.get_field("from_gt") for p in pos_proposals]
+                    # pos_proposals = [p[gtm] for p, gtm in zip(pos_proposals, gt_masks)]
                     pred_masks = [p.get_field("pred_mask") for p in pos_proposals]
                     pred_masks = torch.cat(pred_masks)
-                    pred_masks = (pred_masks == 0)
+                    # pred_masks = (pred_masks == 0)
                     rois_box = self.pooler_box(features, pos_proposals)
                     rois_mask = self.pooler_mask(features, pos_proposals)
 
