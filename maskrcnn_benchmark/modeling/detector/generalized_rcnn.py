@@ -209,7 +209,7 @@ class GeneralizedRCNN(nn.Module):
             if self.training:
                 for i in range(1):  # Todo: use configx
                     old_proposals = meta_data["old_proposals"]
-                    positive_inds = [p.get_field("proto_labels") > 0 for p in old_proposals]
+                    positive_inds = [p.get_field("labels") > 0 for p in old_proposals]
                     pos_proposals = [p[i] for p, i in zip(old_proposals, positive_inds)]
                     neg_proposals = [p[~i] for p, i in zip(old_proposals, positive_inds)]
                     for proposal in pos_proposals:
