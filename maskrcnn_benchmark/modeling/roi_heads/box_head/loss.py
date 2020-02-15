@@ -79,7 +79,7 @@ class FastRCNNLossComputation(object):
 
         return labels, regression_targets
 
-    def subsample(self, proposals, targets):
+    def subsample(self, proposals, targets, subample=True):
         """
         This method performs the positive/negative sampling, and return
         the sampled proposals.
@@ -105,12 +105,13 @@ class FastRCNNLossComputation(object):
 
         # distributed sampled proposals, that were obtained on all feature maps
         # concatenated via the fg_bg_sampler, into individual feature map levels
-        for img_idx, (pos_inds_img, neg_inds_img) in enumerate(
-            zip(sampled_pos_inds, sampled_neg_inds)
-        ):
-            img_sampled_inds = torch.nonzero(pos_inds_img | neg_inds_img).squeeze(1)
-            proposals_per_image = proposals[img_idx][img_sampled_inds]
-            proposals[img_idx] = proposals_per_image
+        if subample:
+            for img_idx, (pos_inds_img, neg_inds_img) in enumerate(
+                zip(sampled_pos_inds, sampled_neg_inds)
+            ):
+                img_sampled_inds = torch.nonzero(pos_inds_img | neg_inds_img).squeeze(1)
+                proposals_per_image = proposals[img_idx][img_sampled_inds]
+                proposals[img_idx] = proposals_per_image
 
         self._proposals = proposals
         return proposals

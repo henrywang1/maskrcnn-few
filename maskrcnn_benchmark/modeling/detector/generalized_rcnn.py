@@ -239,7 +239,7 @@ class GeneralizedRCNN(nn.Module):
                                  }
                     new_proposals = [cat_boxlist((p,n)) for p,n in zip(pos_proposals, neg_proposals)]
                     _, _, detector_cycle_losses = self.roi_heads(
-                        features, new_proposals, targets, meta_data)
+                        features, new_proposals, targets, meta_data, subsample=False)
                     for k in detector_cycle_losses.keys():
                         detector_cycle_losses[k + "_pred_" + str(i)] = detector_cycle_losses.pop(k)
                     losses.update(detector_cycle_losses)
