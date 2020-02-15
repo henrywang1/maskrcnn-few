@@ -96,8 +96,11 @@ class ROIMaskHead(torch.nn.Module):
         #     mask_logits_mlp = self.predictor_mlp(x.view(b, -1))
         #     mask_logits_mlp = mask_logits_mlp.view(b, 2, 28, 28)
         #     all_mask_logits.append(mask_logits_mlp)
-        disc_maps = torch.stack(
-            [one_hot(x[1].argmax(0), 28) + one_hot(x[1].argmax(1), 28) for x in mask_logits])
+        if mask_logits.numel():
+            disc_maps = torch.stack(
+                [one_hot(x[1].argmax(0), 28) + one_hot(x[1].argmax(1), 28) for x in mask_logits])
+        else:
+            disc_maps = mask_logits
         meta_data["old_proposals"] = all_proposals
         disc_maps = disc_maps[torch.cat([p.get_field("labels") > 0 for p in proposals])]
         meta_data["pred_mask"] = disc_maps
