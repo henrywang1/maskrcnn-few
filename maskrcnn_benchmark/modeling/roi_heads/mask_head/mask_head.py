@@ -98,10 +98,9 @@ class ROIMaskHead(torch.nn.Module):
         #     all_mask_logits.append(mask_logits_mlp)
         disc_maps = torch.stack(
             [one_hot(x[1].argmax(0), 28) + one_hot(x[1].argmax(1), 28) for x in mask_logits])
-        meta_data["pos_proposals"] = proposals
-        num_of_proposal = [len(p) for p in proposals]
-        for pos_proposal, pred_mask in zip(proposals, disc_maps.split(num_of_proposal)):
-            pos_proposal.add_field("pred_mask", pred_mask)
+        meta_data["old_proposals"] = all_proposals
+        disc_maps = disc_maps[torch.cat([p.get_field("proto_labels") > 0 for p in proposals])]
+        meta_data["pred_mask"] = disc_maps
 
         if not self.training:
             result = self.post_processor(mask_logits, proposals)

@@ -17,6 +17,7 @@ from maskrcnn_benchmark.utils.comm import is_main_process, all_gather
 from ..backbone import build_backbone
 from ..rpn.rpn import build_rpn
 from ..roi_heads.roi_heads import build_roi_heads
+from maskrcnn_benchmark.structures.boxlist_ops import cat_boxlist
 
 
 def mask_avg_pool(fts, mask):
@@ -206,13 +207,15 @@ class GeneralizedRCNN(nn.Module):
                 features, proposals, targets, meta_data)
             losses = {}
             if self.training:
-                for i in range(1):  # Todo: use config
-                    pos_proposals = meta_data["pos_proposals"]
-                    # gt_masks = [p.get_field("from_gt") for p in pos_proposals]
-                    # pos_proposals = [p[gtm] for p, gtm in zip(pos_proposals, gt_masks)]
-                    pred_masks = [p.get_field("pred_mask") for p in pos_proposals]
-                    pred_masks = torch.cat(pred_masks)
-                    # pred_masks = (pred_masks == 0)
+                for i in range(1):  # Todo: use configx
+                    old_proposals = meta_data["old_proposals"]
+                    positive_inds = [p.get_field("proto_labels") > 0 for p in old_proposals]
+                    pos_proposals = [p[i] for p, i in zip(old_proposals, positive_inds)]
+                    neg_proposals = [p[~i] for p, i in zip(old_proposals, positive_inds)]
+                    for proposal in pos_proposals:
+                        proposal.bbox = proposal.get_field("pred_target")
+
+                    pred_masks = meta_data["pred_mask"]
                     rois_box = self.pooler_box(features, pos_proposals)
                     rois_mask = self.pooler_mask(features, pos_proposals)
 
@@ -234,8 +237,9 @@ class GeneralizedRCNN(nn.Module):
                                  "roi_mask": (rois_mask_q, rois_mask_s),
                                  "unique_labels": unique_labels
                                  }
+                    new_proposals = [cat_boxlist((p,n)) for p,n in zip(pos_proposals, neg_proposals)]
                     _, _, detector_cycle_losses = self.roi_heads(
-                        features, proposals, targets, meta_data)
+                        features, new_proposals, targets, meta_data)
                     for k in detector_cycle_losses.keys():
                         detector_cycle_losses[k + "_pred_" + str(i)] = detector_cycle_losses.pop(k)
                     losses.update(detector_cycle_losses)

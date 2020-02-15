@@ -165,6 +165,12 @@ class FastRCNNLossComputation(object):
         )
         box_loss = box_loss / labels.numel()
 
+        pos_target = box_regression[:, [4, 5, 6, 7]]
+        pos_target = pos_target.split([len(p) for p in proposals])
+        for p, t in zip(proposals, pos_target):
+            pred_target = self.box_coder.decode(t, p.bbox)
+            p.add_field("pred_target", pred_target)
+
         return classification_loss, box_loss
 
 
