@@ -22,7 +22,7 @@ class ROIBoxHead(torch.nn.Module):
         self.post_processor = make_roi_box_post_processor(cfg)
         self.loss_evaluator = make_roi_box_loss_evaluator(cfg)
 
-    def forward(self, features, proposals, targets=None, meta_data=None, subample=True):
+    def forward(self, features, proposals, targets=None, meta_data=None):
         """
         Arguments:
             features (list[Tensor]): feature-maps from possibly several levels
@@ -41,7 +41,7 @@ class ROIBoxHead(torch.nn.Module):
             # Faster R-CNN subsamples during training the proposals with a fixed
             # positive / negative ratio
             with torch.no_grad():
-                proposals = self.loss_evaluator.subsample(proposals, targets, subample)
+                proposals = self.loss_evaluator.subsample(proposals, targets)
                 unique_label_q, unique_label_s = meta_data["unique_labels"]
                 labels_q, labels_s = [p.get_field("labels") for p in proposals]
                 proto_labels_q = get_encode_label(labels_q.long(), unique_label_s)

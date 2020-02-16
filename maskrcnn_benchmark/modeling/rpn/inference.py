@@ -67,15 +67,18 @@ class RPNPostProcessor(torch.nn.Module):
             gt_box.add_field("objectness", torch.ones(len(gt_box), device=device))
             # gt_box.add_field("from_gt", torch.ones(len(gt_box), dtype=bool, device=device))
 
-        # for proposal in proposals:
-        #   proposal.add_field("from_gt", torch.zeros(len(proposal), dtype=bool, device=device))
-
-        proposals = [
-            cat_boxlist((proposal, gt_box))
-            for proposal, gt_box in zip(proposals, gt_boxes)
-        ]
-
-        return proposals
+        ret_proposals = []
+        for proposal, gt_box in zip(proposals, gt_boxes):
+            idxs = list(range(0, len(proposal)))
+            odd_proposal = proposal[idxs[0::2]]
+            even_proposal = proposal[idxs[1::2]]
+            ret_proposals.append(cat_boxlist((odd_proposal, gt_box)))
+            ret_proposals.append(cat_boxlist((even_proposal, gt_box)))
+        # proposals = [
+        #     cat_boxlist((proposal, gt_box))
+        #     for proposal, gt_box in zip(proposals, gt_boxes)
+        # ]
+        return ret_proposals
 
     def forward_for_single_feature_map(self, anchors, objectness, box_regression):
         """

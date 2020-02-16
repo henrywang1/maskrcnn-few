@@ -141,7 +141,7 @@ _C.MODEL.RPN.STRADDLE_THRESH = 0
 # Minimum overlap required between an anchor and ground-truth box for the
 # (anchor, gt box) pair to be a positive example (IoU >= FG_IOU_THRESHOLD
 # ==> positive RPN example)
-_C.MODEL.RPN.FG_IOU_THRESHOLD = 0.7
+_C.MODEL.RPN.FG_IOU_THRESHOLD = 0.8
 # Maximum overlap allowed between an anchor and ground-truth box for the
 # (anchor, gt box) pair to be a negative examples (IoU < BG_IOU_THRESHOLD
 # ==> negative RPN example)
@@ -409,7 +409,7 @@ _C.SOLVER.WEIGHT_DECAY_BIAS = 0
 _C.SOLVER.GAMMA = 0.1
 _C.SOLVER.STEPS = (30000,)
 
-_C.SOLVER.WARMUP_FACTOR = 0.1 #1.0 / 3
+_C.SOLVER.WARMUP_FACTOR = 0.05 #1.0 / 3
 _C.SOLVER.WARMUP_ITERS = 1000
 _C.SOLVER.WARMUP_METHOD = "linear"
 

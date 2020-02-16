@@ -41,10 +41,10 @@ class CombinedROIHeads(torch.nn.ModuleDict):
         if cfg.MODEL.KEYPOINT_ON and cfg.MODEL.ROI_KEYPOINT_HEAD.SHARE_BOX_FEATURE_EXTRACTOR:
             self.keypoint.feature_extractor = self.box.feature_extractor
 
-    def forward(self, features, proposals, targets=None, meta_data=None, subsample=True):
+    def forward(self, features, proposals, targets=None, meta_data=None):
         losses = {}
         # TODO rename x to roi_box_features, if it doesn't increase memory consumption
-        x, detections, loss_box = self.box(features, proposals, targets, meta_data, subsample)
+        x, detections, loss_box = self.box(features, proposals, targets, meta_data)
         losses.update(loss_box)
         if self.cfg.MODEL.MASK_ON:
             mask_features = features

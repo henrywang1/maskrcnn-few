@@ -101,7 +101,7 @@ class ROIMaskHead(torch.nn.Module):
                 [one_hot(x[1].argmax(0), 28) + one_hot(x[1].argmax(1), 28) for x in mask_logits])
         else:
             disc_maps = mask_logits
-        meta_data["old_proposals"] = all_proposals
+        meta_data["old_proposals"] = all_proposals if self.training else proposals
         disc_maps = disc_maps[torch.cat([p.get_field("labels") > 0 for p in proposals])]
         meta_data["pred_mask"] = disc_maps
 

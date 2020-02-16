@@ -202,18 +202,17 @@ class GeneralizedRCNN(nn.Module):
                      "unique_labels": unique_labels
                      }
         proposals, proposal_losses = self.rpn(images, features, targets)
+        first_proposals = [proposals[0], proposals[2]]
+        second_proposals = [proposals[1], proposals[3]]
         if self.roi_heads:
             x, result, detector_losses = self.roi_heads(
-                features, proposals, targets, meta_data)
+                features, first_proposals, targets, meta_data)
             losses = {}
             if self.training:
                 for i in range(1):  # Todo: use configx
                     old_proposals = meta_data["old_proposals"]
                     positive_inds = [p.get_field("labels") > 0 for p in old_proposals]
                     pos_proposals = [p[i] for p, i in zip(old_proposals, positive_inds)]
-                    neg_proposals = [p[~i] for p, i in zip(old_proposals, positive_inds)]
-                    for proposal in pos_proposals:
-                        proposal.bbox = proposal.get_field("pred_target")
 
                     pred_masks = meta_data["pred_mask"]
                     rois_box = self.pooler_box(features, pos_proposals)
@@ -237,9 +236,9 @@ class GeneralizedRCNN(nn.Module):
                                  "roi_mask": (rois_mask_q, rois_mask_s),
                                  "unique_labels": unique_labels
                                  }
-                    new_proposals = [cat_boxlist((p,n)) for p,n in zip(pos_proposals, neg_proposals)]
+
                     _, _, detector_cycle_losses = self.roi_heads(
-                        features, new_proposals, targets, meta_data, subsample=False)
+                        features, second_proposals, targets, meta_data)
                     for k in detector_cycle_losses.keys():
                         detector_cycle_losses[k + "_pred_" + str(i)] = detector_cycle_losses.pop(k)
                     losses.update(detector_cycle_losses)
