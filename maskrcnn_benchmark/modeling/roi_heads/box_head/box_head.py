@@ -41,7 +41,10 @@ class ROIBoxHead(torch.nn.Module):
             # Faster R-CNN subsamples during training the proposals with a fixed
             # positive / negative ratio
             with torch.no_grad():
-                proposals = self.loss_evaluator.subsample(proposals, targets)
+                if "old_proposals" in meta_data.keys():
+                    proposals = meta_data["old_proposals"]
+                else:
+                    proposals = self.loss_evaluator.subsample(proposals, targets)
                 unique_label_q, unique_label_s = meta_data["unique_labels"]
                 labels_q, labels_s = [p.get_field("labels") for p in proposals]
                 proto_labels_q = get_encode_label(labels_q.long(), unique_label_s)

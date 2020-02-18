@@ -245,11 +245,10 @@ class GeneralizedRCNN(nn.Module):
                     rois_mask, target_per_img, labels)
 
                 unique_labels = [torch.unique(l) for l in labels]
-                meta_data = {"roi_box": (rois_box_q, rois_box_s),
-                             "roi_mask": (rois_mask_q, rois_mask_s),
-                             "unique_labels": unique_labels,
-                             "pred_mask": meta_data["pred_mask"]
-                             }
+                meta_data.update({"roi_box": (rois_box_q, rois_box_s),
+                                  "roi_mask": (rois_mask_q, rois_mask_s),
+                                  "unique_labels": unique_labels
+                                  })
                 _, _, detector_losses = self.roi_heads(
                     features, proposals, targets, meta_data)
 

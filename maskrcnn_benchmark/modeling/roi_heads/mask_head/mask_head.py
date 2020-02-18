@@ -34,6 +34,49 @@ def keep_only_positive_boxes(boxes):
     return positive_boxes, positive_inds
 
 
+class Self_Attn(nn.Module):
+    """ Self attention Layer"""
+
+    def __init__(self, in_dim=256, activation='reul'):
+        super(Self_Attn, self).__init__()
+        self.chanel_in = in_dim
+        self.activation = activation
+
+        self.query_conv = nn.Conv2d(
+            in_channels=in_dim, out_channels=in_dim // 4, kernel_size=1)
+        self.key_conv = nn.Conv2d(
+            in_channels=in_dim, out_channels=in_dim // 4, kernel_size=1)
+        self.value_conv = nn.Conv2d(
+            in_channels=in_dim, out_channels=in_dim, kernel_size=1)
+        self.gamma = nn.Parameter(torch.zeros(1))
+
+        self.softmax = nn.Softmax(dim=-1)
+
+    def forward(self, x1, x2):
+        """
+            inputs :
+                x : input feature maps( B X C X W X H)
+            returns :
+                out : self attention value + input feature 
+                attention: B X N X N (N is Width*Height)
+        """
+        assert x1.size() == x2.size()
+        m_batchsize, C, width, height = x1.size()
+        proj_query = self.query_conv(x1).view(
+            m_batchsize, -1, width * height).permute(0, 2, 1)  # B X C X(N)
+        proj_key = self.key_conv(x2).view(
+            m_batchsize, -1, width * height)  # B X C x (*W*H)
+        energy = torch.bmm(proj_query, proj_key)  # transpose check
+        attention = self.softmax(energy)  # BX (N) X (N)
+        proj_value = self.value_conv(x2).view(
+            m_batchsize, -1, width * height)  # B X C X N
+
+        out = torch.bmm(proj_value, attention.permute(0, 2, 1))
+        out = out.view(m_batchsize, C, width, height)
+
+        out = self.gamma * out + x1
+        return out, attention
+
 class ROIMaskHead(torch.nn.Module):
     def __init__(self, cfg, in_channels):
         super(ROIMaskHead, self).__init__()
@@ -42,6 +85,7 @@ class ROIMaskHead(torch.nn.Module):
         self.use_mlp = cfg.MODEL.ROI_MASK_HEAD.USE_MLP and cfg.MODEL.ROI_MASK_HEAD.USE_MIL_LOSS
         self.feature_extractor = make_roi_mask_feature_extractor(cfg, in_channels, extract_type="avg")
         self.predictor = make_roi_mask_predictor(cfg, self.feature_extractor.out_channels)
+        self.predictor_2 = make_roi_mask_predictor(cfg, self.feature_extractor.out_channels)
         if self.use_corr:
             self.feature_extractor_corr = make_roi_mask_feature_extractor(cfg, in_channels, extract_type="corr")
             self.predictor_corr = make_roi_mask_predictor(cfg, self.feature_extractor.out_channels)
@@ -52,7 +96,7 @@ class ROIMaskHead(torch.nn.Module):
         self.post_processor = make_roi_mask_post_processor(cfg)
         self.loss_evaluator = make_roi_mask_loss_evaluator(cfg)
         self.use_box_mask = cfg.TEST.USE_BOX_MASK
-
+        self.attn = Self_Attn( 256, 'relu')
     # def forward_support(self, roi_s):
     #     roi_s = self.feature_extractor.forward_ext(roi_s)
     #     mask_logits = self.predictor(roi_s)
@@ -120,10 +164,15 @@ class ROIMaskHead(torch.nn.Module):
                 meta_data["old_proposals"] = all_proposals if self.training else proposals
                 disc_maps = disc_maps[torch.cat([p.get_field("labels") > 0 for p in proposals])]
                 meta_data["pred_mask"] = disc_maps
+                meta_data["old_x"] = x
             else:
-                disc_maps_old = meta_data["pred_mask"]
-                loss_sim = (1- torch.abs(disc_maps - disc_maps_old)).float().mean()
-                loss_sim = loss_sim*0.2
+                old_x = meta_data["old_x"]
+                x = self.attn(old_x, x)[0]
+                mask_logits = self.predictor_2(x)
+                all_mask_logits = [mask_logits]
+                # loss_sim = (1- torch.abs(disc_maps - disc_maps_old)).float().mean()
+                # loss_sim = loss_sim*0.2
+
 
         if not self.training:
             result = self.post_processor(mask_logits, proposals)
