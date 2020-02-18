@@ -88,16 +88,16 @@ class MaskRCNNLossComputation(object):
         self.discretization_size = discretization_size
         center_weight = torch.zeros((3, 3))
         center_weight[1][1] = 1.
-        aff_weights = []
-        for i in range(3):
-            for j in range(3):
-                if i == 1 and j == 1:
-                    continue
-                weight = torch.zeros((3, 3))
-                weight[i][j] = 1.
-                aff_weights.append(center_weight - weight)
-        aff_weights = [w.view(1, 1, 3, 3).to("cuda") for w in aff_weights]
-        self.aff_weights = torch.cat(aff_weights, 0)
+        # aff_weights = []
+        # for i in range(3):
+        #     for j in range(3):
+        #         if i == 1 and j == 1:
+        #             continue
+        #         weight = torch.zeros((3, 3))
+        #         weight[i][j] = 1.
+        #         aff_weights.append(center_weight - weight)
+        # aff_weights = [w.view(1, 1, 3, 3).to("cuda") for w in aff_weights]
+        # self.aff_weights = torch.cat(aff_weights, 0)
         self.box_coder = BoxCoder(weights=(10., 10., 5., 5.))
         self.use_mil_loss = use_mil_loss
         self.use_aff = use_aff
@@ -239,6 +239,7 @@ class MaskRCNNLossComputation(object):
             mil_losses.append(mil_loss)
 
         if self.use_aff:
+            assert False
             mask_logits = all_mask_logits[0]
             mask_logits_n = mask_logits[:, 1:].sigmoid()
             aff_maps = F.conv2d(mask_logits_n, self.aff_weights, padding=(1, 1))

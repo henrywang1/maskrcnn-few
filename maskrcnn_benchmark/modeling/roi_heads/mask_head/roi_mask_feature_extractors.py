@@ -64,6 +64,18 @@ class MaskRCNNFPNFeatureExtractor(nn.Module):
             self.feature_l2_norm = FeatureL2Norm()
             self.feature_correlation = FeatureCorrelation()
 
+    # def forward_ext(self, roi_s):
+    #     """
+    #     Arguments:
+    #         extract_type (string): avg, mlp, corr
+    #     """
+    #     x = F.adaptive_avg_pool2d(roi_s, 1)
+    #     x = x * roi_s
+
+    #     for layer_name in self.blocks:
+    #         x = F.relu(getattr(self, layer_name)(x))
+
+    #     return roi_s
 
     def forward(self, x, proposals, meta_data):
         """

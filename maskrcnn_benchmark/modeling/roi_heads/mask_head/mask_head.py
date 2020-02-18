@@ -53,6 +53,13 @@ class ROIMaskHead(torch.nn.Module):
         self.loss_evaluator = make_roi_mask_loss_evaluator(cfg)
         self.use_box_mask = cfg.TEST.USE_BOX_MASK
 
+    # def forward_support(self, roi_s):
+    #     roi_s = self.feature_extractor.forward_ext(roi_s)
+    #     mask_logits = self.predictor(roi_s)
+    #     disc_maps = torch.stack(
+    #         [one_hot(x[1].argmax(0), 28) + one_hot(x[1].argmax(1), 28) for x in mask_logits])
+    #     return disc_maps
+
     def forward(self, features, proposals, targets=None, meta_data=None):
         """
         Arguments:
@@ -84,6 +91,12 @@ class ROIMaskHead(torch.nn.Module):
         else:
             mask_logits = self.predictor(x)
 
+        # if not self.training and "rois_mask_s_pred" in meta_data:
+        #     meta_data["roi_mask"] = meta_data["rois_mask_s_pred"]
+        #     x2 = self.feature_extractor(features, proposals, meta_data)
+        #     mask_logits2 = self.predictor(x2)
+        #     mask_logits = (mask_logits + mask_logits2)/2
+
         all_mask_logits = []
         all_mask_logits.append(mask_logits)
         # if self.use_corr:
@@ -96,20 +109,29 @@ class ROIMaskHead(torch.nn.Module):
         #     mask_logits_mlp = self.predictor_mlp(x.view(b, -1))
         #     mask_logits_mlp = mask_logits_mlp.view(b, 2, 28, 28)
         #     all_mask_logits.append(mask_logits_mlp)
-        if mask_logits.numel():
-            disc_maps = torch.stack(
-                [one_hot(x[1].argmax(0), 28) + one_hot(x[1].argmax(1), 28) for x in mask_logits])
-        else:
-            disc_maps = mask_logits
-        meta_data["old_proposals"] = all_proposals if self.training else proposals
-        disc_maps = disc_maps[torch.cat([p.get_field("labels") > 0 for p in proposals])]
-        meta_data["pred_mask"] = disc_maps
+        if self.training:
+            loss_sim = None
+            if mask_logits.numel():
+                disc_maps = torch.stack(
+                    [one_hot(x[1].argmax(0), 28) + one_hot(x[1].argmax(1), 28) for x in mask_logits])
+            else:
+                disc_maps = mask_logits
+            if "pred_mask" not in meta_data:
+                meta_data["old_proposals"] = all_proposals if self.training else proposals
+                disc_maps = disc_maps[torch.cat([p.get_field("labels") > 0 for p in proposals])]
+                meta_data["pred_mask"] = disc_maps
+            else:
+                disc_maps_old = meta_data["pred_mask"]
+                loss_sim = (1- torch.abs(disc_maps - disc_maps_old)).float().mean()
+                loss_sim = loss_sim*0.2
 
         if not self.training:
             result = self.post_processor(mask_logits, proposals)
             return x, result, {}
 
         loss_mask = self.loss_evaluator(proposals, all_mask_logits, targets)
+        if loss_sim is not None:
+             return x, all_proposals, dict(loss_mask=loss_mask, loss_sim=loss_sim)
 
         return x, all_proposals, dict(loss_mask=loss_mask)
 

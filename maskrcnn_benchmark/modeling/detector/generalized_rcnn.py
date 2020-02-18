@@ -203,10 +203,26 @@ class GeneralizedRCNN(nn.Module):
                      }
         proposals, proposal_losses = self.rpn(images, features, targets)
         if self.roi_heads:
+            
+            # x, result, detector_losses = self.roi_heads(features, proposals, targets, meta_data)
+            # rois_mask_s_pred_mask = self.roi_heads.mask.forward_support(rois_mask_s)
+            # if not self.training:
+            #     rois_mask_s_pred = mask_avg_pool(rois_mask_s, rois_mask_s_pred_mask)
+            #     # rois_box_s_pred = mask_avg_pool(rois_box_s, rois_mask_s_pred_mask)
+            #     rois_mask_s_pred = rois_mask_s_pred.unsqueeze(-1).unsqueeze(-1)
+            #     # rois_box_s_pred = rois_box_s_pred.unsqueeze(-1).unsqueeze(-1)
+            #     # meta_data = {"roi_box": (rois_box_q, rois_box_s_pred),
+            #     #              "roi_mask": (rois_mask_q, rois_mask_s_pred),
+            #     #              "unique_labels": unique_labels
+            #     #              }p
+            # # try pred only
+            # meta_data["rois_mask_s_pred"] = (None, rois_mask_s_pred)
             x, result, detector_losses = self.roi_heads(
                 features, proposals, targets, meta_data)
+
             losses = {}
             if self.training:
+                losses.update(detector_losses)
                 old_proposals = meta_data["old_proposals"]
                 positive_inds = [p.get_field("labels") > 0 for p in old_proposals]
                 pos_proposals = [p[i] for p, i in zip(old_proposals, positive_inds)]
@@ -231,25 +247,29 @@ class GeneralizedRCNN(nn.Module):
                 unique_labels = [torch.unique(l) for l in labels]
                 meta_data = {"roi_box": (rois_box_q, rois_box_s),
                              "roi_mask": (rois_mask_q, rois_mask_s),
-                             "unique_labels": unique_labels
+                             "unique_labels": unique_labels,
+                             "pred_mask": meta_data["pred_mask"]
                              }
-                _, _, detector_self_losses = self.roi_heads(
+                _, _, detector_losses = self.roi_heads(
                     features, proposals, targets, meta_data)
-                for k in detector_self_losses.keys():
-                    detector_self_losses[k + "_self"] = detector_self_losses.pop(k)
 
-                unique_labels = [unique_labels[1], unique_labels[0]]
-                meta_data = {"roi_box": (rois_box_s, rois_box_q),
-                             "roi_mask": (rois_mask_s, rois_mask_q),
-                             "unique_labels": unique_labels
-                             }
-                _, _, detector_cycle_losses = self.roi_heads(
-                    features, proposals, targets, meta_data)
-                for k in detector_cycle_losses.keys():
-                    detector_cycle_losses[k + "_cycle"] = detector_cycle_losses.pop(k)
+                detector_self_losses = {}
+                for key in detector_losses.keys():
+                    new_key = key if key == "loss_sim" else key + "_self"
+                    detector_self_losses[new_key] = detector_losses[key]
+
+                # unique_labels = [unique_labels[1], unique_labels[0]]
+                # meta_data = {"roi_box": (rois_box_s, rois_box_q),
+                #              "roi_mask": (rois_mask_s, rois_mask_q),
+                #              "unique_labels": unique_labels
+                #              }
+                # _, _, detector_cycle_losses = self.roi_heads(
+                #     features, proposals, targets, meta_data)
+                # for k in detector_cycle_losses.keys():
+                #     detector_cycle_losses[k + "_cycle"] = detector_cycle_losses.pop(k)
 
                 losses.update(detector_self_losses)
-                losses.update(detector_cycle_losses)
+                # losses.update(detector_cycle_losses)
         else:
             # RPN-only models don't have roi_heads
             x = features
@@ -257,7 +277,6 @@ class GeneralizedRCNN(nn.Module):
             detector_losses = {}
 
         if self.training:
-            losses.update(detector_losses)
             losses.update(proposal_losses)
     
             return losses
