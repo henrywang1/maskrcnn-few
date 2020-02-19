@@ -70,7 +70,8 @@ class FPN2MLPFeatureExtractor(nn.Module):
         self.fc6 = make_fc(input_size, representation_size, use_gn)
         self.fc7 = make_fc(representation_size, representation_size, use_gn)
 
-        self.fc_rot = make_fc(input_size, 4, use_gn)
+        self.fc_rot_1 = make_fc(input_size, representation_size, use_gn)
+        self.fc_rot_2 = make_fc(representation_size, 4, use_gn)
         self.out_channels = representation_size
 
     def rotation_task(self, x):
@@ -91,7 +92,8 @@ class FPN2MLPFeatureExtractor(nn.Module):
             x_rot[mask] = x[mask].rot90(k, dims=(2, 3))
 
         x_rot = x_rot.view(x_rot.size(0), -1)
-        y_rot_pred = F.relu(self.fc_rot(x_rot))
+        x_rot = F.relu(self.fc_rot_1(x_rot))
+        y_rot_pred = F.relu(self.fc_rot_2(x_rot))
         loss_rot = F.cross_entropy(y_rot_pred, y_rot)
 
         return loss_rot
