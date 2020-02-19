@@ -220,55 +220,6 @@ class GeneralizedRCNN(nn.Module):
             x, result, detector_losses = self.roi_heads(
                 features, proposals, targets, meta_data)
 
-            losses = {}
-            if self.training:
-                losses.update(detector_losses)
-                old_proposals = meta_data["old_proposals"]
-                positive_inds = [p.get_field("labels") > 0 for p in old_proposals]
-                pos_proposals = [p[i] for p, i in zip(old_proposals, positive_inds)]
-
-                pred_masks = meta_data["pred_mask"]
-                rois_box = self.pooler_box(features, pos_proposals)
-                rois_mask = self.pooler_mask(features, pos_proposals)
-
-                rois_box = mask_avg_pool(rois_box, pred_masks)
-                rois_box = rois_box.unsqueeze(-1).unsqueeze(-1)
-                rois_mask = mask_avg_pool(rois_mask, pred_masks)
-                rois_mask = rois_mask.unsqueeze(-1).unsqueeze(-1)
-
-                labels = [p.get_field("labels").long() for p in pos_proposals]
-                target_per_img = [len(p) for p in pos_proposals]
-
-                rois_box_q, rois_box_s = self.prepare_roi_list(
-                    rois_box, target_per_img, labels)
-                rois_mask_q, rois_mask_s = self.prepare_roi_list(
-                    rois_mask, target_per_img, labels)
-
-                unique_labels = [torch.unique(l) for l in labels]
-                meta_data.update({"roi_box": (rois_box_q, rois_box_s),
-                                  "roi_mask": (rois_mask_q, rois_mask_s),
-                                  "unique_labels": unique_labels
-                                  })
-                _, _, detector_losses = self.roi_heads(
-                    features, proposals, targets, meta_data)
-
-                detector_self_losses = {}
-                for key in detector_losses.keys():
-                    new_key = key if key == "loss_sim" else key + "_self"
-                    detector_self_losses[new_key] = detector_losses[key]
-
-                # unique_labels = [unique_labels[1], unique_labels[0]]
-                # meta_data = {"roi_box": (rois_box_s, rois_box_q),
-                #              "roi_mask": (rois_mask_s, rois_mask_q),
-                #              "unique_labels": unique_labels
-                #              }
-                # _, _, detector_cycle_losses = self.roi_heads(
-                #     features, proposals, targets, meta_data)
-                # for k in detector_cycle_losses.keys():
-                #     detector_cycle_losses[k + "_cycle"] = detector_cycle_losses.pop(k)
-
-                losses.update(detector_self_losses)
-                # losses.update(detector_cycle_losses)
         else:
             # RPN-only models don't have roi_heads
             x = features
@@ -276,6 +227,8 @@ class GeneralizedRCNN(nn.Module):
             detector_losses = {}
 
         if self.training:
+            losses = {}
+            losses.update(detector_losses)
             losses.update(proposal_losses)
     
             return losses

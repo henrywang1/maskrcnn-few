@@ -86,24 +86,13 @@ class MaskRCNNLossComputation(object):
         """
         self.proposal_matcher = proposal_matcher
         self.discretization_size = discretization_size
-        center_weight = torch.zeros((3, 3))
-        center_weight[1][1] = 1.
-        # aff_weights = []
-        # for i in range(3):
-        #     for j in range(3):
-        #         if i == 1 and j == 1:
-        #             continue
-        #         weight = torch.zeros((3, 3))
-        #         weight[i][j] = 1.
-        #         aff_weights.append(center_weight - weight)
-        # aff_weights = [w.view(1, 1, 3, 3).to("cuda") for w in aff_weights]
-        # self.aff_weights = torch.cat(aff_weights, 0)
-        self.box_coder = BoxCoder(weights=(10., 10., 5., 5.))
-        self.use_mil_loss = use_mil_loss
-        self.use_aff = use_aff
-        if use_box_mask:
-            assert not use_mil_loss
-        self.use_box_mask = use_box_mask
+
+        # self.box_coder = BoxCoder(weights=(10., 10., 5., 5.))
+        # self.use_mil_loss = use_mil_loss
+        # self.use_aff = use_aff
+        # if use_box_mask:
+        #     assert not use_mil_loss
+        # self.use_box_mask = use_box_mask
 
     def match_targets_to_proposals(self, proposal, target):
         match_quality_matrix = boxlist_iou(target, proposal)
@@ -152,49 +141,7 @@ class MaskRCNNLossComputation(object):
 
         return labels, masks
 
-    def prepare_targets_cr(self, proposals):
-        # Sample both negative and positive proposals
-        # Only with per col/row labels (without mask)
-        labels = []
-        for proposals_per_image in proposals:
-            regression_target = proposals_per_image.get_field("regression_targets")
-            matched_bbox = self.box_coder.decode(regression_target, proposals_per_image.bbox)
-            M = self.discretization_size
-            pos_masks_per_image = torch.ones(len(proposals_per_image), M, M, dtype=torch.float32)
-            not_matched_idx = (regression_target != 0).any(1)
-            # if a box fully matched the proposal, we set all values to 1
-            # otherwise, we project the box on proposal
-            if not_matched_idx.any():
-                pos_masks_per_image[not_matched_idx] = project_boxes_on_boxes(
-                    matched_bbox[not_matched_idx], proposals_per_image[not_matched_idx], M)
-
-            pos_masks_per_image = pos_masks_per_image.cuda()
-            pos_labels = torch.cat(
-                [pos_masks_per_image.sum(2), pos_masks_per_image.sum(1)], 1)
-            pos_labels = (pos_labels > 0).float()
-
-            labels.append(pos_labels)
-
-        return labels
-
-    def prepare_targets_boxes(self, proposals):
-        masks = []
-        for proposals_per_image in proposals:
-            regression_target = proposals_per_image.get_field("regression_targets")
-            matched_bbox = self.box_coder.decode(regression_target, proposals_per_image.bbox)
-            M = self.discretization_size
-            pos_masks_per_image = torch.ones(len(proposals_per_image), M, M, dtype=torch.float32)
-            not_matched_idx = (regression_target != 0).any(1)
-            # if a box fully matched the proposal, we set all values to 1
-            # otherwise, we project the box on proposal
-            if not_matched_idx.any():
-                pos_masks_per_image[not_matched_idx] = project_boxes_on_boxes(
-                    matched_bbox[not_matched_idx], proposals_per_image[not_matched_idx], M)
-
-            masks.append(pos_masks_per_image.cuda())
-        return masks
-
-    def __call__(self, proposals, all_mask_logits, targets):
+    def __call__(self, proposals, mask_logits, targets):
         """
         Arguments:
             proposals (list[BoxList])
@@ -207,47 +154,17 @@ class MaskRCNNLossComputation(object):
         labels = cat([p.get_field("proto_labels") for p in proposals])
         labels = (labels > 0).long()
         pos_inds = torch.nonzero(labels > 0).squeeze(1)
-        if not self.use_mil_loss:
-            mask_logits = all_mask_logits[0]
-            if self.use_box_mask:
-                mask_targets = self.prepare_targets_boxes(proposals)
-            else:
-                _, mask_targets = self.prepare_targets(proposals, targets)
-            mask_targets = cat(mask_targets, dim=0)
-            labels_pos = labels[pos_inds]
-            if mask_targets.numel() == 0:
-                return mask_logits.sum() * 0
-            mask_loss = F.binary_cross_entropy_with_logits(
-                mask_logits[pos_inds, labels_pos], mask_targets[pos_inds]
-            )
-            return mask_loss
+        _, mask_targets = self.prepare_targets(proposals, targets)
+        mask_targets = cat(mask_targets, dim=0)
+        labels_pos = labels[pos_inds]
+        if mask_targets.numel() == 0:
+            return mask_logits.sum() * 0
 
-        labels_cr = self.prepare_targets_cr(proposals)
-        labels_cr = cat(labels_cr, dim=0)
-        mil_losses = []
-        for mask_logits in all_mask_logits:
+        mask_loss = F.binary_cross_entropy_with_logits(
+            mask_logits[pos_inds, labels_pos], mask_targets[pos_inds]
+        )
 
-            mil_score = mask_logits[:, 1]
-            mil_score = torch.cat([mil_score.max(2)[0], mil_score.max(1)[0]], 1)
-        # torch.mean (in binary_cross_entropy_with_logits) doesn't
-        # accept empty tensors, so handle it separately
-            if mil_score.numel() == 0:
-                mil_losses.append(mask_logits.sum() * 0)
-
-            mil_loss = F.binary_cross_entropy_with_logits(
-                mil_score[pos_inds], labels_cr[pos_inds])
-            mil_losses.append(mil_loss)
-
-        if self.use_aff:
-            assert False
-            mask_logits = all_mask_logits[0]
-            mask_logits_n = mask_logits[:, 1:].sigmoid()
-            aff_maps = F.conv2d(mask_logits_n, self.aff_weights, padding=(1, 1))
-            affinity_loss = mask_logits_n * (aff_maps**2)
-            affinity_loss = torch.mean(affinity_loss)
-            return 1.2*sum(mil_losses)/len(mil_losses) + 0.05*affinity_loss
-        else:
-            return sum(mil_losses)/len(mil_losses)
+        return mask_loss
 
 
 def make_roi_mask_loss_evaluator(cfg):

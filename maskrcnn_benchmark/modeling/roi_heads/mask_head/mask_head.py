@@ -135,52 +135,11 @@ class ROIMaskHead(torch.nn.Module):
         else:
             mask_logits = self.predictor(x)
 
-        # if not self.training and "rois_mask_s_pred" in meta_data:
-        #     meta_data["roi_mask"] = meta_data["rois_mask_s_pred"]
-        #     x2 = self.feature_extractor(features, proposals, meta_data)
-        #     mask_logits2 = self.predictor(x2)
-        #     mask_logits = (mask_logits + mask_logits2)/2
-
-        all_mask_logits = []
-        all_mask_logits.append(mask_logits)
-        # if self.use_corr:
-        #     x = self.feature_extractor_corr(features, proposals, meta_data)
-        #     mask_logits_corr = self.predictor_corr(x)
-        #     all_mask_logits.append(mask_logits_corr)
-        # if self.use_mlp:
-        #     x = self.feature_extractor_mlp(features, proposals, meta_data)
-        #     b, c, h, w = x.shape
-        #     mask_logits_mlp = self.predictor_mlp(x.view(b, -1))
-        #     mask_logits_mlp = mask_logits_mlp.view(b, 2, 28, 28)
-        #     all_mask_logits.append(mask_logits_mlp)
-        if self.training:
-            loss_sim = None
-            if mask_logits.numel():
-                disc_maps = torch.stack(
-                    [one_hot(x[1].argmax(0), 28) + one_hot(x[1].argmax(1), 28) for x in mask_logits])
-            else:
-                disc_maps = mask_logits
-            if "pred_mask" not in meta_data:
-                meta_data["old_proposals"] = all_proposals if self.training else proposals
-                disc_maps = disc_maps[torch.cat([p.get_field("labels") > 0 for p in proposals])]
-                meta_data["pred_mask"] = disc_maps
-                meta_data["old_x"] = x
-            else:
-                old_x = meta_data["old_x"]
-                x = self.attn(old_x, x)[0]
-                mask_logits = self.predictor_2(x)
-                all_mask_logits = [mask_logits]
-                # loss_sim = (1- torch.abs(disc_maps - disc_maps_old)).float().mean()
-                # loss_sim = loss_sim*0.2
-
-
         if not self.training:
             result = self.post_processor(mask_logits, proposals)
             return x, result, {}
 
-        loss_mask = self.loss_evaluator(proposals, all_mask_logits, targets)
-        if loss_sim is not None:
-             return x, all_proposals, dict(loss_mask=loss_mask, loss_sim=loss_sim)
+        loss_mask = self.loss_evaluator(proposals, mask_logits, targets)
 
         return x, all_proposals, dict(loss_mask=loss_mask)
 

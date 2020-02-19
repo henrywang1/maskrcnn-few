@@ -41,10 +41,7 @@ class ROIBoxHead(torch.nn.Module):
             # Faster R-CNN subsamples during training the proposals with a fixed
             # positive / negative ratio
             with torch.no_grad():
-                if "old_proposals" in meta_data.keys():
-                    proposals = meta_data["old_proposals"]
-                else:
-                    proposals = self.loss_evaluator.subsample(proposals, targets)
+                proposals = self.loss_evaluator.subsample(proposals, targets)
                 unique_label_q, unique_label_s = meta_data["unique_labels"]
                 labels_q, labels_s = [p.get_field("labels") for p in proposals]
                 proto_labels_q = get_encode_label(labels_q.long(), unique_label_s)
@@ -54,7 +51,7 @@ class ROIBoxHead(torch.nn.Module):
 
         # extract features that will be fed to the final classifier. The
         # feature_extractor generally corresponds to the pooler + heads
-        x = self.feature_extractor(features, proposals, meta_data)
+        x, loss_rot = self.feature_extractor(features, proposals, meta_data)
         # final classifier that converts the features into predictions
         class_logits, box_regression = self.predictor(x)
 
@@ -69,7 +66,7 @@ class ROIBoxHead(torch.nn.Module):
         return (
             x,
             proposals,
-            dict(loss_classifier=loss_classifier, loss_box_reg=loss_box_reg),
+            dict(loss_classifier=loss_classifier, loss_box_reg=loss_box_reg, loss_rot=loss_rot),
         )
 
 
