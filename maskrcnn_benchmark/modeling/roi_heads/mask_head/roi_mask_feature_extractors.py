@@ -60,9 +60,6 @@ class MaskRCNNFPNFeatureExtractor(nn.Module):
             input_feature = layer_features
             self.blocks.append(layer_name)
         self.out_channels = layer_features
-        if extract_type == "corr":
-            self.feature_l2_norm = FeatureL2Norm()
-            self.feature_correlation = FeatureCorrelation()
 
     # def forward_ext(self, roi_s):
     #     """
@@ -85,37 +82,18 @@ class MaskRCNNFPNFeatureExtractor(nn.Module):
         x = self.pooler(x, proposals)
         roi_q, roi_s = meta_data["roi_mask"]
         proto_labels = [p.get_field("proto_labels") for p in proposals]
-        if self.extract_type == "mlp":
-            pass
-        elif self.extract_type == "avg":
-            roi_s = F.adaptive_avg_pool2d(roi_s, 1) if roi_s.numel() else roi_s
-            if x.numel():
-                proto_labels_q = proto_labels[0] - 1
-                roi_s = roi_s[proto_labels_q]
-                if self.training:
-                    roi_q = F.adaptive_avg_pool2d(roi_q, 1) if roi_q.numel() else roi_q
-                    proto_labels_s = proto_labels[1] - 1
-                    roi_q = roi_q[proto_labels_s]
-                    roi = torch.cat([roi_s, roi_q])
-                else:
-                    roi = roi_s
-                x = x * roi
-        elif self.extract_type == "corr":
-            if x.numel():
-                proto_labels_q = proto_labels[0] - 1
-                roi_s = roi_s[proto_labels_q]
-                if self.training:
-                    proto_labels_s = proto_labels[1] - 1
-                    roi_q = roi_q[proto_labels_s]
-                    roi = torch.cat([roi_s, roi_q])
-                else:
-                    roi = roi_s
-                x = self.feature_l2_norm(x)
-                roi = self.feature_l2_norm(roi)
-                x = self.feature_correlation(roi, x)
-                x = self.feature_l2_norm(F.relu(x))
-        else:
-            raise NotImplementedError
+        roi_s = F.adaptive_avg_pool2d(roi_s, 1) if roi_s.numel() else roi_s
+        if x.numel():
+            proto_labels_q = proto_labels[0] - 1
+            roi_s = roi_s[proto_labels_q]
+            if self.training:
+                roi_q = F.adaptive_avg_pool2d(roi_q, 1) if roi_q.numel() else roi_q
+                proto_labels_s = proto_labels[1] - 1
+                roi_q = roi_q[proto_labels_s]
+                roi = torch.cat([roi_s, roi_q])
+            else:
+                roi = roi_s
+            x = x * roi
 
         for layer_name in self.blocks:
             x = F.relu(getattr(self, layer_name)(x))

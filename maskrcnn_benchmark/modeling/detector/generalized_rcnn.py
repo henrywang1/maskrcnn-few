@@ -203,20 +203,6 @@ class GeneralizedRCNN(nn.Module):
                      }
         proposals, proposal_losses = self.rpn(images, features, targets)
         if self.roi_heads:
-            
-            # x, result, detector_losses = self.roi_heads(features, proposals, targets, meta_data)
-            # rois_mask_s_pred_mask = self.roi_heads.mask.forward_support(rois_mask_s)
-            # if not self.training:
-            #     rois_mask_s_pred = mask_avg_pool(rois_mask_s, rois_mask_s_pred_mask)
-            #     # rois_box_s_pred = mask_avg_pool(rois_box_s, rois_mask_s_pred_mask)
-            #     rois_mask_s_pred = rois_mask_s_pred.unsqueeze(-1).unsqueeze(-1)
-            #     # rois_box_s_pred = rois_box_s_pred.unsqueeze(-1).unsqueeze(-1)
-            #     # meta_data = {"roi_box": (rois_box_q, rois_box_s_pred),
-            #     #              "roi_mask": (rois_mask_q, rois_mask_s_pred),
-            #     #              "unique_labels": unique_labels
-            #     #              }p
-            # # try pred only
-            # meta_data["rois_mask_s_pred"] = (None, rois_mask_s_pred)
             x, result, detector_losses = self.roi_heads(
                 features, proposals, targets, meta_data)
 

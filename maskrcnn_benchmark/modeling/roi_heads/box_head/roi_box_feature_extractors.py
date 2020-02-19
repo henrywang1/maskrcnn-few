@@ -89,7 +89,7 @@ class FPN2MLPFeatureExtractor(nn.Module):
 
         for k in range(1, 4):
             mask = (y_rot == k)
-            x_rot[mask] = x_rot[mask].rot90(k, dims=(2, 3))
+            x_rot[mask] = x[mask].rot90(k, dims=(2, 3))
 
         x_rot = x_rot.view(x_rot.size(0), -1)
         x_rot = F.relu(self.fc_rot_1(x_rot))
@@ -101,11 +101,9 @@ class FPN2MLPFeatureExtractor(nn.Module):
 
     def forward(self, x, proposals, meta_data):
         x = self.pooler(x, proposals)
-
-        loss_rot = self.rotation_task(x)
-
         roi_q, roi_s = meta_data["roi_box"]
         if self.training:
+            loss_rot = self.rotation_task(x)
             roi_q = F.adaptive_avg_pool2d(roi_q, 1) if roi_q.numel() else roi_q
             roi_s = F.adaptive_avg_pool2d(roi_s, 1) if roi_s.numel() else roi_s
             unique_label_q, unique_label_s = meta_data["unique_labels"]
