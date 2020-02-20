@@ -4,6 +4,7 @@ import torch
 # transpose
 FLIP_LEFT_RIGHT = 0
 FLIP_TOP_BOTTOM = 1
+ROTATE_90 = 2
 
 
 class BoxList(object):
@@ -134,13 +135,14 @@ class BoxList(object):
           :py:attr:`PIL.Image.ROTATE_180`, :py:attr:`PIL.Image.ROTATE_270`,
           :py:attr:`PIL.Image.TRANSPOSE` or :py:attr:`PIL.Image.TRANSVERSE`.
         """
-        if method not in (FLIP_LEFT_RIGHT, FLIP_TOP_BOTTOM):
+        if method not in (FLIP_LEFT_RIGHT, FLIP_TOP_BOTTOM, ROTATE_90):
             raise NotImplementedError(
-                "Only FLIP_LEFT_RIGHT and FLIP_TOP_BOTTOM implemented"
+                "Only FLIP_LEFT_RIGHT FLIP_TOP_BOTTOM, and ROTATE_90 implemented"
             )
 
         image_width, image_height = self.size
         xmin, ymin, xmax, ymax = self._split_into_xyxy()
+        new_size = self.size
         if method == FLIP_LEFT_RIGHT:
             TO_REMOVE = 1
             transposed_xmin = image_width - xmax - TO_REMOVE
@@ -152,11 +154,17 @@ class BoxList(object):
             transposed_xmax = xmax
             transposed_ymin = image_height - ymax
             transposed_ymax = image_height - ymin
+        elif method == ROTATE_90:
+            transposed_xmin = ymin
+            transposed_xmax = ymax
+            transposed_ymin = image_width - xmax
+            transposed_ymax = image_width - xmin
+            new_size = (self.size[1], self.size[0])
 
         transposed_boxes = torch.cat(
             (transposed_xmin, transposed_ymin, transposed_xmax, transposed_ymax), dim=-1
         )
-        bbox = BoxList(transposed_boxes, self.size, mode="xyxy")
+        bbox = BoxList(transposed_boxes, new_size, mode="xyxy")
         # bbox._copy_extra_fields(self)
         for k, v in self.extra_fields.items():
             if not isinstance(v, torch.Tensor):
@@ -264,3 +272,9 @@ if __name__ == "__main__":
     t_bbox = bbox.transpose(0)
     print(t_bbox)
     print(t_bbox.bbox)
+
+    temp = bbox
+    for i in range(0, 5):
+        temp = temp.transpose(ROTATE_90)
+        print(temp)
+        print(temp.bbox)

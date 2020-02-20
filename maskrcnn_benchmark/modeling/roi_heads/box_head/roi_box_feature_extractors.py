@@ -69,41 +69,13 @@ class FPN2MLPFeatureExtractor(nn.Module):
         self.pooler = pooler
         self.fc6 = make_fc(input_size, representation_size, use_gn)
         self.fc7 = make_fc(representation_size, representation_size, use_gn)
-
-        self.fc_rot_1 = make_fc(input_size, representation_size, use_gn)
-        self.fc_rot_2 = make_fc(representation_size, 4, use_gn)
         self.out_channels = representation_size
-
-    def rotation_task(self, x):
-        """"Perform rotation on input feature"
-        Parameters
-        ----------
-        x : B x C x H x W
-        Returns
-        ----------s
-        rotation prediction loss
-        """
-        x_rot = x.clone()
-        y_rot = torch.randint(low=0, high=4, size=(
-            x.shape[0], ), device=x.device)
-
-        for k in range(1, 4):
-            mask = (y_rot == k)
-            x_rot[mask] = x[mask].rot90(k, dims=(2, 3))
-
-        x_rot = x_rot.view(x_rot.size(0), -1)
-        x_rot = F.relu(self.fc_rot_1(x_rot))
-        y_rot_pred = F.relu(self.fc_rot_2(x_rot))
-        loss_rot = F.cross_entropy(y_rot_pred, y_rot)
-
-        return loss_rot
 
 
     def forward(self, x, proposals, meta_data):
         x = self.pooler(x, proposals)
         roi_q, roi_s = meta_data["roi_box"]
         if self.training:
-            loss_rot = self.rotation_task(x)
             roi_q = F.adaptive_avg_pool2d(roi_q, 1) if roi_q.numel() else roi_q
             roi_s = F.adaptive_avg_pool2d(roi_s, 1) if roi_s.numel() else roi_s
             unique_label_q, unique_label_s = meta_data["unique_labels"]
@@ -131,7 +103,7 @@ class FPN2MLPFeatureExtractor(nn.Module):
         x = F.relu(self.fc6(x))
         x = F.relu(self.fc7(x))
 
-        return x, loss_rot
+        return x
 
     def update_labels(self, proto_labels_q, unique_label_s):
         """

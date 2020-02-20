@@ -51,7 +51,7 @@ class ROIBoxHead(torch.nn.Module):
 
         # extract features that will be fed to the final classifier. The
         # feature_extractor generally corresponds to the pooler + heads
-        x, loss_rot = self.feature_extractor(features, proposals, meta_data)
+        x = self.feature_extractor(features, proposals, meta_data)
         # final classifier that converts the features into predictions
         class_logits, box_regression = self.predictor(x)
 
@@ -66,7 +66,7 @@ class ROIBoxHead(torch.nn.Module):
         return (
             x,
             proposals,
-            dict(loss_classifier=loss_classifier, loss_box_reg=loss_box_reg, loss_rot=loss_rot),
+            dict(loss_classifier=loss_classifier, loss_box_reg=loss_box_reg),
         )
 
 

@@ -78,7 +78,7 @@ def do_train(
         iteration = iteration + 1
         arguments["iteration"] = iteration
 
-        images = images.to(device)
+        # images = images.to(device)
         targets = [target.to(device) for target in targets]
 
         loss_dict = model(images, targets)

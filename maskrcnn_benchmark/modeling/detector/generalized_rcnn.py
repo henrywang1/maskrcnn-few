@@ -18,7 +18,8 @@ from ..backbone import build_backbone
 from ..rpn.rpn import build_rpn
 from ..roi_heads.roi_heads import build_roi_heads
 from maskrcnn_benchmark.structures.boxlist_ops import cat_boxlist
-
+from maskrcnn_benchmark.modeling.make_layers import make_fc
+from random import randint
 
 def mask_avg_pool(fts, mask):
     """
@@ -63,11 +64,32 @@ class GeneralizedRCNN(nn.Module):
         self.features_df = None
         self.pair_df = None
 
+        input_size = 256 * 7 ** 2
+        representation_size = cfg.MODEL.ROI_BOX_HEAD.MLP_HEAD_DIM
+        use_gn = cfg.MODEL.ROI_BOX_HEAD.USE_GN
+        self.fc_rot_1 = make_fc(input_size, representation_size, use_gn)
+        self.fc_rot_2 = make_fc(representation_size, 4, use_gn)
+
         if self.is_extract_feature:
             self.init_extract_feature()
         elif self.is_use_feature:
             self.init_use_feature()
             self.shot = cfg.TEST.SHOT
+
+    def rotation_task(self, x, y):
+        """"Perform rotation on input feature"
+        Parameters
+        ----------
+        x : B x C x H x W
+        Returns
+        ----------s
+        rotation prediction loss
+        """
+        x = x.view(x.size(0), -1)
+        x = F.relu(self.fc_rot_1(x))
+        y_pred = F.relu(self.fc_rot_2(x))
+        loss_rot = F.cross_entropy(y_pred, y)
+        return loss_rot
 
     def init_extract_feature(self):
         pathlib.Path(self.output_folder).mkdir(parents=True, exist_ok=True)
@@ -175,7 +197,18 @@ class GeneralizedRCNN(nn.Module):
         """
         if self.training and targets is None:
             raise ValueError("In training mode, targets should be passed")
-        images = to_image_list(images)
+        device = targets[0].bbox.device
+        images = [img.to(device) for img in images]
+
+        if self.training:
+            rot_imgs = []
+            small_imgs = F.interpolate(images[0].unsqueeze(0), scale_factor=0.5)
+            for i in range(0, 4):
+                rot_imgs.append(small_imgs[0].rot90(i, dims=(1, 2)))
+            rot_imgs = to_image_list(rot_imgs, 32)
+            rot_features = self.backbone(rot_imgs.tensors)
+
+        images = to_image_list(images, 32)
         features = self.backbone(images.tensors)
         rois_box = self.pooler_box(features, targets)
         rois_mask = self.pooler_mask(features, targets)
@@ -195,17 +228,33 @@ class GeneralizedRCNN(nn.Module):
                 rois_box_s, rois_mask_s = self.load_from_df(targets[0], labels[0])
                 rois_box_q = None
                 rois_mask_q = None
-
         unique_labels = [torch.unique(l) for l in labels]
         meta_data = {"roi_box": (rois_box_q, rois_box_s),
                      "roi_mask": (rois_mask_q, rois_mask_s),
                      "unique_labels": unique_labels
                      }
         proposals, proposal_losses = self.rpn(images, features, targets)
+
+        if self.training:
+            with torch.no_grad():
+                unrotated_proposal = self.rpn(rot_imgs, [f[:1] for f in rot_features], None)
+                unrotated_proposal = unrotated_proposal[0][:1000]
+                rot_proposals = []
+                temp = unrotated_proposal
+                ROTATE_90 = 2
+                for i in range(4):
+                    if i > 0:
+                        temp = temp.transpose(ROTATE_90)
+                    rand_idx = [randint(0, len(temp)-1) for i in range(200)]
+                    rot_proposals.append(temp[rand_idx])
+                rot_features = self.pooler_box(rot_features, rot_proposals)
+                y_rot_pred = torch.cat([torch.ones(200) * i for i in range(4)]).to(device)
+                y_rot_pred = y_rot_pred.long().to(device)
+                loss_rot = self.rotation_task(rot_features, y_rot_pred)
+
         if self.roi_heads:
             x, result, detector_losses = self.roi_heads(
                 features, proposals, targets, meta_data)
-
         else:
             # RPN-only models don't have roi_heads
             x = features
@@ -216,7 +265,8 @@ class GeneralizedRCNN(nn.Module):
             losses = {}
             losses.update(detector_losses)
             losses.update(proposal_losses)
-    
+            losses.update(dict(loss_rot=loss_rot))
+
             return losses
 
         return result

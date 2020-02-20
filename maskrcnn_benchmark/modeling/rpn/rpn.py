@@ -174,6 +174,8 @@ class RPNModule(torch.nn.Module):
                 boxes = self.box_selector_train(
                     anchors, objectness, rpn_box_regression, targets
                 )
+        if targets is None:
+            return boxes
         loss_objectness, loss_rpn_box_reg = self.loss_evaluator(
             anchors, objectness, rpn_box_regression, targets
         )
