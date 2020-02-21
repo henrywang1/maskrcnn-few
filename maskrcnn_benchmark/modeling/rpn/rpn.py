@@ -137,7 +137,7 @@ class RPNModule(torch.nn.Module):
         self.box_selector_test = box_selector_test
         self.loss_evaluator = loss_evaluator
 
-    def forward(self, images, features, targets=None):
+    def forward(self, images, features, targets=None, is_rot=False):
         """
         Arguments:
             images (ImageList): images for which we want to compute the predictions
@@ -156,9 +156,21 @@ class RPNModule(torch.nn.Module):
         anchors = self.anchor_generator(images, features)
 
         if self.training:
+            if is_rot:
+                return self._forward_rot(anchors, objectness, rpn_box_regression, targets, is_rot=True)
             return self._forward_train(anchors, objectness, rpn_box_regression, targets)
         else:
             return self._forward_test(anchors, objectness, rpn_box_regression)
+
+    def _forward_rot(self, anchors, objectness, rpn_box_regression, targets, is_rot=False):
+        if self.cfg.MODEL.RPN_ONLY:
+            boxes = anchors
+        else:
+            with torch.no_grad():
+                boxes = self.box_selector_train(
+                    anchors, objectness, rpn_box_regression, targets, is_rot
+                )
+        return boxes
 
     def _forward_train(self, anchors, objectness, rpn_box_regression, targets):
         if self.cfg.MODEL.RPN_ONLY:
@@ -174,8 +186,6 @@ class RPNModule(torch.nn.Module):
                 boxes = self.box_selector_train(
                     anchors, objectness, rpn_box_regression, targets
                 )
-        if targets is None:
-            return boxes
         loss_objectness, loss_rpn_box_reg = self.loss_evaluator(
             anchors, objectness, rpn_box_regression, targets
         )

@@ -1,4 +1,5 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
+from random import randint
 import torch
 
 from maskrcnn_benchmark.modeling.box_coder import BoxCoder
@@ -122,7 +123,7 @@ class RPNPostProcessor(torch.nn.Module):
             result.append(boxlist)
         return result
 
-    def forward(self, anchors, objectness, box_regression, targets=None):
+    def forward(self, anchors, objectness, box_regression, targets=None, is_rot=False):
         """
         Arguments:
             anchors: list[list[BoxList]]
@@ -144,11 +145,14 @@ class RPNPostProcessor(torch.nn.Module):
 
         if num_levels > 1:
             boxlists = self.select_over_all_levels(boxlists)
-
+        if is_rot:
+            rand_size = min(len(boxlists[0]), 512)
+            rand_idx = [randint(0, rand_size-1) for i in range(rand_size)]
+            boxlists[0] = boxlists[0][rand_idx]
         # append ground-truth bboxes to proposals
         if self.training and targets is not None:
             boxlists = self.add_gt_proposals(boxlists, targets)
-
+        boxlists = [remove_small_boxes(boxlist, 2) for boxlist in boxlists]
         return boxlists
 
     def select_over_all_levels(self, boxlists):

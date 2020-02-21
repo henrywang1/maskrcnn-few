@@ -237,20 +237,24 @@ class GeneralizedRCNN(nn.Module):
 
         if self.training:
             with torch.no_grad():
-                unrotated_proposal = self.rpn(rot_imgs, [f[:1] for f in rot_features], None)
-                unrotated_proposal = unrotated_proposal[0][:1000]
+                small_targets = targets[0].resize(rot_imgs.image_sizes[0][::-1])
+                unrotated_proposal = self.rpn(
+                    rot_imgs, [f[:1] for f in rot_features], [small_targets], is_rot=True)
+                unrotated_proposal = unrotated_proposal[0]
                 rot_proposals = []
                 temp = unrotated_proposal
                 ROTATE_90 = 2
+                y_rot_pred = []
                 for i in range(4):
                     if i > 0:
                         temp = temp.transpose(ROTATE_90)
-                    rand_idx = [randint(0, len(temp)-1) for i in range(200)]
-                    rot_proposals.append(temp[rand_idx])
+                    rot_proposals.append(temp)
+                    y_rot_pred.append(torch.ones(len(rot_proposals[i])) * i)
                 rot_features = self.pooler_box(rot_features, rot_proposals)
-                y_rot_pred = torch.cat([torch.ones(200) * i for i in range(4)]).to(device)
+                y_rot_pred = torch.cat(y_rot_pred)
                 y_rot_pred = y_rot_pred.long().to(device)
-                loss_rot = self.rotation_task(rot_features, y_rot_pred)
+            loss_rot = self.rotation_task(rot_features, y_rot_pred)
+            loss_rot = loss_rot * 0.2
 
         if self.roi_heads:
             x, result, detector_losses = self.roi_heads(
