@@ -152,7 +152,8 @@ class RPNPostProcessor(torch.nn.Module):
         # append ground-truth bboxes to proposals
         if self.training and targets is not None:
             boxlists = self.add_gt_proposals(boxlists, targets)
-        boxlists = [remove_small_boxes(boxlist, 2) for boxlist in boxlists]
+        if is_rot:
+            boxlists = [remove_small_boxes(boxlist, 2) for boxlist in boxlists]
         return boxlists
 
     def select_over_all_levels(self, boxlists):
