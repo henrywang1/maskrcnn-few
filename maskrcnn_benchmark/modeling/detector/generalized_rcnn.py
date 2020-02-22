@@ -242,8 +242,8 @@ class GeneralizedRCNN(nn.Module):
             with torch.no_grad():
                 new_size = rot_imgs.tensors.shape[-2:]
                 unrotated_proposal = BoxList(proposals[0].bbox/2, new_size, mode="xyxy")
-                bg_mask = (proposals[0].get_field("labels") == 0)
-                unrotated_proposal = unrotated_proposal[bg_mask]
+                # bg_mask = (proposals[0].get_field("labels") == 0)
+                # unrotated_proposal = unrotated_proposal[bg_mask]
                 temp = unrotated_proposal
                 rand_size = min(len(unrotated_proposal), 256)
                 rand_idx = [randint(0, rand_size-1) for i in range(rand_size)]
@@ -256,9 +256,9 @@ class GeneralizedRCNN(nn.Module):
                         temp = temp.transpose(ROTATE_90)
                     rot_proposals.append(temp)
                     y_rot_pred.append(torch.ones(len(rot_proposals[i])) * i)
+                y_rot_pred = torch.cat(y_rot_pred)
+                y_rot_pred = y_rot_pred.long().to(device)
             rot_features = self.pooler_box(rot_features, rot_proposals)
-            y_rot_pred = torch.cat(y_rot_pred)
-            y_rot_pred = y_rot_pred.long().to(device)
             loss_rot = self.rotation_task(rot_features, y_rot_pred)
         else:
             # RPN-only models don't have roi_heads
