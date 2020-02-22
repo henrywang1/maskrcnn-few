@@ -13,12 +13,14 @@ from torch.nn import functional as F
 import pandas as pd
 
 from maskrcnn_benchmark.structures.image_list import to_image_list
+from maskrcnn_benchmark.structures.bounding_box import BoxList
 from maskrcnn_benchmark.utils.comm import is_main_process, all_gather
 from ..backbone import build_backbone
 from ..rpn.rpn import build_rpn
 from ..roi_heads.roi_heads import build_roi_heads
 from maskrcnn_benchmark.structures.boxlist_ops import cat_boxlist
 from maskrcnn_benchmark.modeling.make_layers import make_fc
+from maskrcnn_benchmark.structures.boxlist_ops import remove_small_boxes
 from random import randint
 
 def mask_avg_pool(fts, mask):
@@ -198,7 +200,6 @@ class GeneralizedRCNN(nn.Module):
         if self.training and targets is None:
             raise ValueError("In training mode, targets should be passed")
         device = targets[0].bbox.device
-        images = [img.to(device) for img in images]
 
         if self.training:
             rot_imgs = []
@@ -234,31 +235,32 @@ class GeneralizedRCNN(nn.Module):
                      "unique_labels": unique_labels
                      }
         proposals, proposal_losses = self.rpn(images, features, targets)
-
-        if self.training:
-            with torch.no_grad():
-                small_targets = targets[0].resize(rot_imgs.image_sizes[0][::-1])
-                unrotated_proposal = self.rpn(
-                    rot_imgs, [f[:1] for f in rot_features], [small_targets], is_rot=True)
-                unrotated_proposal = unrotated_proposal[0]
-                rot_proposals = []
-                temp = unrotated_proposal
-                ROTATE_90 = 2
-                y_rot_pred = []
-                for i in range(4):
-                    if i > 0:
-                        temp = temp.transpose(ROTATE_90)
-                    rot_proposals.append(temp)
-                    y_rot_pred.append(torch.ones(len(rot_proposals[i])) * i)
-                rot_features = self.pooler_box(rot_features, rot_proposals)
-                y_rot_pred = torch.cat(y_rot_pred)
-                y_rot_pred = y_rot_pred.long().to(device)
-            loss_rot = self.rotation_task(rot_features, y_rot_pred)
-            loss_rot = loss_rot * 0.2
-
         if self.roi_heads:
             x, result, detector_losses = self.roi_heads(
                 features, proposals, targets, meta_data)
+        if self.training:
+            with torch.no_grad():
+                new_size = rot_imgs.tensors.shape[-2:]
+                unrotated_proposal = BoxList(proposals[0].bbox/2, new_size, mode="xyxy")
+                bg_mask = (proposals[0].get_field("labels") == 0)
+                unrotated_proposal = unrotated_proposal[bg_mask]
+                temp = remove_small_boxes(unrotated_proposal, 2)
+                rand_size = min(len(unrotated_proposal), 256)
+                rand_idx = [randint(0, rand_size-1) for i in range(rand_size)]
+                temp = unrotated_proposal[rand_idx]
+                rot_proposals = []
+                y_rot_pred = []
+                for i in range(4):
+                    if i > 0:
+                        ROTATE_90 = 2
+                        temp = temp.transpose(ROTATE_90)
+                    rot_proposals.append(temp)
+                    y_rot_pred.append(torch.ones(len(rot_proposals[i])) * i)
+            rot_features = self.pooler_box(rot_features, rot_proposals)
+            y_rot_pred = torch.cat(y_rot_pred)
+            y_rot_pred = y_rot_pred.long().to(device)
+            loss_rot = self.rotation_task(rot_features, y_rot_pred)
+            loss_rot = loss_rot * 0.2
         else:
             # RPN-only models don't have roi_heads
             x = features

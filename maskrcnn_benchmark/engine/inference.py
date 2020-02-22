@@ -30,7 +30,7 @@ def compute_on_dataset(model, data_loader, device, timer=None):
                 output = targets[0]
             else:
                 targets = [target.to(device) for target in targets]
-                output = model(images.to(device), targets)
+                output = model([img.to(device) for img in images], targets)
                 if output is None: # extract feature only
                     continue
                 output = [o.to(cpu_device) for o in output]

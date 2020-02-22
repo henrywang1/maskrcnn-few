@@ -158,6 +158,7 @@ class BoxList(object):
             transposed_ymin = image_height - ymax
             transposed_ymax = image_height - ymin
         elif method == ROTATE_90:
+            assert image_width == image_height # because of the padding
             transposed_xmin = ymin
             transposed_xmax = ymax
             transposed_ymin = image_width - xmax
