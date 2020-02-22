@@ -244,7 +244,7 @@ class GeneralizedRCNN(nn.Module):
                 unrotated_proposal = BoxList(proposals[0].bbox/2, new_size, mode="xyxy")
                 bg_mask = (proposals[0].get_field("labels") == 0)
                 unrotated_proposal = unrotated_proposal[bg_mask]
-                temp = remove_small_boxes(unrotated_proposal, 2)
+                temp = unrotated_proposal
                 rand_size = min(len(unrotated_proposal), 256)
                 rand_idx = [randint(0, rand_size-1) for i in range(rand_size)]
                 temp = unrotated_proposal[rand_idx]
