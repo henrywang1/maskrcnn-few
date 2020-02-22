@@ -260,7 +260,6 @@ class GeneralizedRCNN(nn.Module):
             y_rot_pred = torch.cat(y_rot_pred)
             y_rot_pred = y_rot_pred.long().to(device)
             loss_rot = self.rotation_task(rot_features, y_rot_pred)
-            loss_rot = loss_rot * 0.2
         else:
             # RPN-only models don't have roi_heads
             x = features
