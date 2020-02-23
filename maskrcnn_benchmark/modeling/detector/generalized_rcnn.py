@@ -67,12 +67,14 @@ class GeneralizedRCNN(nn.Module):
         self.pair_df = None
 
         input_size = 256 * 7 ** 2
-        # representation_size = cfg.MODEL.ROI_BOX_HEAD.MLP_HEAD_DIM
+        representation_size = cfg.MODEL.ROI_BOX_HEAD.MLP_HEAD_DIM
         use_gn = cfg.MODEL.ROI_BOX_HEAD.USE_GN
         # self.fc_rot_1 = make_fc(input_size, representation_size, use_gn)
         # self.fc_rot_2 = make_fc(representation_size, 4, use_gn)
         # self.fc_rot = make_fc(input_size, 4, use_gn)
-        self.fc_rot_pred = make_fc(input_size, 4, use_gn)
+        self.fc_rot_fc6 = self.roi_heads.box.feature_extractor.fc6
+        self.fc_rot_fc7 = self.roi_heads.box.feature_extractor.fc7
+        self.fc_rot_pred = make_fc(representation_size, 4, use_gn)
 
         if self.is_extract_feature:
             self.init_extract_feature()
@@ -90,7 +92,9 @@ class GeneralizedRCNN(nn.Module):
         rotation prediction loss
         """
         x = x.view(x.size(0), -1)
-        y_pred = F.relu(self.fc_rot_pred(x))
+        x = F.relu(self.fc_rot_fc6(x))
+        x = F.relu(self.fc_rot_fc7(x))
+        y_pred = self.fc_rot_pred(x)
         loss_rot = F.cross_entropy(y_pred, y)
         return loss_rot
 
