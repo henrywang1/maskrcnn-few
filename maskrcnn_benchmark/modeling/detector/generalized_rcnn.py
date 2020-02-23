@@ -67,10 +67,12 @@ class GeneralizedRCNN(nn.Module):
         self.pair_df = None
 
         input_size = 256 * 7 ** 2
-        representation_size = cfg.MODEL.ROI_BOX_HEAD.MLP_HEAD_DIM
+        # representation_size = cfg.MODEL.ROI_BOX_HEAD.MLP_HEAD_DIM
         use_gn = cfg.MODEL.ROI_BOX_HEAD.USE_GN
-        self.fc_rot_1 = make_fc(input_size, representation_size, use_gn)
-        self.fc_rot_2 = make_fc(representation_size, 4, use_gn)
+        # self.fc_rot_1 = make_fc(input_size, representation_size, use_gn)
+        # self.fc_rot_2 = make_fc(representation_size, 4, use_gn)
+        # self.fc_rot = make_fc(input_size, 4, use_gn)
+        self.fc_rot_pred = make_fc(input_size, 4, use_gn)
 
         if self.is_extract_feature:
             self.init_extract_feature()
@@ -84,12 +86,11 @@ class GeneralizedRCNN(nn.Module):
         ----------
         x : B x C x H x W
         Returns
-        ----------s
+        ----------
         rotation prediction loss
         """
         x = x.view(x.size(0), -1)
-        x = F.relu(self.fc_rot_1(x))
-        y_pred = F.relu(self.fc_rot_2(x))
+        y_pred = F.relu(self.fc_rot_pred(x))
         loss_rot = F.cross_entropy(y_pred, y)
         return loss_rot
 
@@ -238,6 +239,11 @@ class GeneralizedRCNN(nn.Module):
         if self.roi_heads:
             x, result, detector_losses = self.roi_heads(
                 features, proposals, targets, meta_data)
+        else:
+            # RPN-only models don't have roi_heads
+            x = features
+            result = proposals
+            detector_losses = {}
         if self.training:
             with torch.no_grad():
                 new_size = rot_imgs.tensors.shape[-2:]
@@ -261,12 +267,7 @@ class GeneralizedRCNN(nn.Module):
                 y_rot_pred = y_rot_pred.long().to(device)
             rot_features = self.pooler_box(rot_features, rot_proposals)
             loss_rot = self.rotation_task(rot_features, y_rot_pred)
-            loss_rot = loss_rot*0.5
-        else:
-            # RPN-only models don't have roi_heads
-            x = features
-            result = proposals
-            detector_losses = {}
+            loss_rot = loss_rot * 0.2
 
         if self.training:
             losses = {}
