@@ -253,9 +253,10 @@ class GeneralizedRCNN(nn.Module):
                 new_size = rot_imgs.tensors.shape[-2:]
                 unrotated_proposal = BoxList(proposals[0].bbox/2, new_size, mode="xyxy")
                 bg_mask = (proposals[0].get_field("labels") == 0)
-                unrotated_proposal = unrotated_proposal[bg_mask]
-                unrotated_proposal = remove_small_boxes(unrotated_proposal, 2)
-                temp = unrotated_proposal
+                temp = unrotated_proposal[bg_mask]
+                temp = remove_small_boxes(unrotated_proposal, 2)
+                if len(temp) == 0:
+                    temp = unrotated_proposal
                 rand_size = min(len(unrotated_proposal), 256)
                 rand_idx = [randint(0, rand_size-1) for i in range(rand_size)]
                 temp = unrotated_proposal[rand_idx]
