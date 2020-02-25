@@ -21,7 +21,7 @@ from ..roi_heads.roi_heads import build_roi_heads
 from maskrcnn_benchmark.structures.boxlist_ops import cat_boxlist
 from maskrcnn_benchmark.modeling.make_layers import make_fc
 from maskrcnn_benchmark.structures.boxlist_ops import remove_small_boxes
-from random import randint
+import numpy as np
 
 def mask_avg_pool(fts, mask):
     """
@@ -82,7 +82,7 @@ class GeneralizedRCNN(nn.Module):
             self.init_use_feature()
             self.shot = cfg.TEST.SHOT
 
-    def rotation_task(self, x, y):
+    def rotation_task(self, x, y, weight=None):
         """"Perform rotation on input feature"
         Parameters
         ----------
@@ -95,7 +95,13 @@ class GeneralizedRCNN(nn.Module):
         x = F.relu(self.fc_rot_fc6(x))
         x = F.relu(self.fc_rot_fc7(x))
         y_pred = self.fc_rot_pred(x)
-        loss_rot = F.cross_entropy(y_pred, y)
+        if weight is None:
+            loss_rot = F.cross_entropy(y_pred, y)
+        else:
+            loss_rot = F.cross_entropy(y_pred, y, reduction='none')
+            loss_rot = loss_rot * weight.detach()
+            loss_rot = loss_rot.mean()
+
         return loss_rot
 
     def init_extract_feature(self):
@@ -252,14 +258,18 @@ class GeneralizedRCNN(nn.Module):
             with torch.no_grad():
                 new_size = rot_imgs.tensors.shape[-2:]
                 unrotated_proposal = BoxList(proposals[0].bbox/2, new_size, mode="xyxy")
+                unrotated_proposal.add_field("objectness", proposals[0].get_field("objectness"))
                 bg_mask = (proposals[0].get_field("labels") == 0)
                 temp = unrotated_proposal[bg_mask]
                 temp = remove_small_boxes(unrotated_proposal, 2)
                 if len(temp) == 0:
                     temp = unrotated_proposal
-                rand_size = min(len(unrotated_proposal), 256)
-                rand_idx = [randint(0, rand_size-1) for i in range(rand_size)]
+                rot_weight = temp.get_field("objectness")
+                rand_size = min(len(temp), 256)
+                rand_idx = np.random.choice(range(rand_size-1), rand_size-1, replace=False)
                 temp = unrotated_proposal[rand_idx]
+                rot_weight = rot_weight[rand_idx]
+                rot_weight = torch.cat([rot_weight]*4)
                 rot_proposals = []
                 y_rot_pred = []
                 for i in range(4):
@@ -271,8 +281,8 @@ class GeneralizedRCNN(nn.Module):
                 y_rot_pred = torch.cat(y_rot_pred)
                 y_rot_pred = y_rot_pred.long().to(device)
             rot_features = self.pooler_box(rot_features, rot_proposals)
-            loss_rot = self.rotation_task(rot_features, y_rot_pred)
-            loss_rot = loss_rot * 0.2
+            loss_rot = self.rotation_task(rot_features, y_rot_pred, rot_weight)
+            loss_rot = loss_rot
 
         if self.training:
             losses = {}
