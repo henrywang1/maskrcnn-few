@@ -56,12 +56,12 @@ class GeneralizedRCNN(nn.Module):
             self.init_use_feature()
             self.shot = cfg.TEST.SHOT
         # if self.training:
-        self.support_pooler = Pooler(
-            output_size=(192, 192),
-            scales=(1.0, ),
-            sampling_ratio=2,
-        )
-        self.match = torch.nn.Conv2d(512, 256, 1)
+        # self.support_pooler = Pooler(
+        #     output_size=(192, 192),
+        #     scales=(1.0, ),
+        #     sampling_ratio=2,
+        # )
+        # self.match = torch.nn.Conv2d(512, 256, 1)
         self.detections_per_img = cfg.TEST.DETECTIONS_PER_IMG
 
     def init_extract_feature(self):
