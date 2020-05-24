@@ -146,8 +146,12 @@ class GeneralizedRCNN(nn.Module):
 
     def intersect1d(self, a, b):
         label = np.intersect1d(a.cpu(), b.cpu())
-        label = np.random.choice(label)
-        return a == label, b==label
+        import pdb; pdb.set_trace()
+        if label.size > 0:
+            label = np.random.choice(label)
+            return a == label, b == label
+        else:
+            return a == a[0], b == b[0]
         
     # def extract_support_feature(idx_s)
     #     idx_s = (idx_s > 0).nonzero().flatten()
