@@ -101,16 +101,11 @@ def make_batch_data_sampler(
     if aspect_grouping:
         if not isinstance(aspect_grouping, (list, tuple)):
             aspect_grouping = [aspect_grouping]
-        if not dataset.is_train:
-            aspect_ratios = _compute_aspect_ratios(dataset)
-            group_ids = _quantize(aspect_ratios, aspect_grouping)
-            batch_sampler = samplers.GroupedBatchSampler(
-                sampler, group_ids, images_per_batch, drop_uneven=False
-            )
-        else:
-            batch_sampler = samplers.QuerySupportSampler(
-                sampler, images_per_batch, dataset, drop_uneven=False
-            )
+        aspect_ratios = _compute_aspect_ratios(dataset)
+        group_ids = _quantize(aspect_ratios, aspect_grouping)
+        batch_sampler = samplers.GroupedBatchSampler(
+            sampler, group_ids, images_per_batch, drop_uneven=False
+        )
     else:
         batch_sampler = torch.utils.data.sampler.BatchSampler(
             sampler, images_per_batch, drop_last=False

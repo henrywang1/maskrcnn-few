@@ -171,61 +171,8 @@ class GeneralizedRCNN(nn.Module):
         """
         if self.training and targets is None:
             raise ValueError("In training mode, targets should be passed")
-        labels = [p.get_field("labels").long() for p in targets]
-        if self.training:
-            idx_q, idx_s = self.intersect1d(labels[0], labels[1])
-            targets[0] = targets[0][idx_q]
-            targets[1] = targets[1][idx_s]
-            targets = [targets[0], targets[1]]
-            target_per_img = [len(p) for p in targets]
-            sampled_targets = [np.random.choice(
-                samples) for samples in target_per_img]
-            sampled_targets = [t[[s]] for t, s in zip(targets, sampled_targets)]
-        else:
-            sampled_targets = targets
-
-        support_images = self.support_pooler([images.tensors], sampled_targets)
-        support_features = self.backbone(support_images)
-        query_features = self.backbone(images.tensors)
-        support_features = support_features[0]
-        support_features = F.adaptive_avg_pool2d(support_features, 1)
-        if self.training:
-            support_features = support_features[[1, 0]]
-            features = [torch.cat([q, q - support_features], 1) for q in query_features]
-            features = [self.match(f) for f in features]
-        else:
-            if self.is_extract_feature:
-                self.save_features(support_features, targets[0])
-                return
-
-            if self.is_use_feature:
-                support_features = self.load_from_df(targets[0], labels[0])
-                all_results = []
-                for support_features_per_class in support_features:
-                    support_features_per_class = support_features_per_class.unsqueeze(0)
-                    features = [torch.cat([q, q - support_features_per_class], 1) for q in query_features]
-                    features = [self.match(f) for f in features]
-                    # all_features.append(temp)
-
-                # for features in all_features:
-                    proposals, proposal_losses = self.rpn(images, features, targets)
-                    # all_proposals.append(proposals)
-                    x, result, detector_losses = self.roi_heads(features, proposals, targets)
-                    all_results.append(result[0])
-                unique_labels = torch.unique(labels[0])
-                unique_labels = torch.cat([l.repeat(len(r)) for l, r in zip(unique_labels, all_results)])
-                all_results = cat_boxlist(all_results)
-                all_results.add_field("labels", unique_labels)
-                cls_scores = all_results.get_field("scores")
-                number_of_detections = len(all_results)
-                image_thresh, _ = torch.kthvalue(
-                    cls_scores.cpu(), number_of_detections - self.detections_per_img + 1
-                )
-                keep = cls_scores >= image_thresh.item()
-                keep = torch.nonzero(keep).squeeze(1)
-                all_results = all_results[keep]
-                return [all_results]
-
+        images = to_image_list(images)
+        features = self.backbone(images.tensors)
         proposals, proposal_losses = self.rpn(images, features, targets)
         if self.roi_heads:
             x, result, detector_losses = self.roi_heads(features, proposals, targets)
