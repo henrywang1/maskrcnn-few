@@ -146,7 +146,6 @@ class GeneralizedRCNN(nn.Module):
 
     def intersect1d(self, a, b):
         label = np.intersect1d(a.cpu(), b.cpu())
-        import pdb; pdb.set_trace()
         if label.size > 0:
             label = np.random.choice(label)
             return a == label, b == label
