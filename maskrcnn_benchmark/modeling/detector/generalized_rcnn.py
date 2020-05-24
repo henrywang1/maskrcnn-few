@@ -15,8 +15,11 @@ from maskrcnn_benchmark.utils.comm import is_main_process, all_gather
 from ..backbone import build_backbone
 from ..rpn.rpn import build_rpn
 from ..roi_heads.roi_heads import build_roi_heads
-
+import numpy as np
 import pandas as pd
+from maskrcnn_benchmark.modeling.poolers import Pooler
+from torch.nn import functional as F
+from maskrcnn_benchmark.structures.boxlist_ops import cat_boxlist
 
 class GeneralizedRCNN(nn.Module):
     """
@@ -52,6 +55,14 @@ class GeneralizedRCNN(nn.Module):
         elif self.is_use_feature:
             self.init_use_feature()
             self.shot = cfg.TEST.SHOT
+        # if self.training:
+        self.support_pooler = Pooler(
+            output_size=(192, 192),
+            scales=(1.0, ),
+            sampling_ratio=2,
+        )
+        self.match = torch.nn.Conv2d(512, 256, 1)
+        self.detections_per_img = cfg.TEST.DETECTIONS_PER_IMG
 
     def init_extract_feature(self):
         pathlib.Path(self.output_folder).mkdir(parents=True, exist_ok=True)
@@ -92,25 +103,19 @@ class GeneralizedRCNN(nn.Module):
         if self.is_use_feature:
             self.finalize_use_feature()
 
-    def save_features(self, rois_box, rois_mask, target):
+    def save_features(self, rois_box, target):
         labels = target.get_field("labels")
         assert len(labels) == len(rois_box)
-        assert len(rois_box) == len(rois_mask)
         img_ids = target.get_field("img_ids")
         ann_ids = target.get_field("ann_ids")
-        for label, roi_box, roi_mask, img_id, ann_id in zip(labels, rois_box, rois_mask, img_ids, ann_ids):
+        for label, roi_box, img_id, ann_id in zip(labels, rois_box, img_ids, ann_ids):
             box_path = "{0}/box/{1}".format(self.output_folder, str(uuid4()))
-            mask_path = "{0}/mask/{1}".format(self.output_folder, str(uuid4()))
             self.features_df = self.features_df.append(
                 {"label": int(label.cpu()), "img_id": int(img_id.cpu()),
-                 "ann_id": int(ann_id.cpu()), "box_path": box_path,
-                 "mask_path": mask_path}, ignore_index=True)
+                 "ann_id": int(ann_id.cpu()), "box_path": box_path}, ignore_index=True)
 
             with open(box_path, "wb") as handle:
                 torch.save(roi_box.cpu(), handle)
-
-            with open(mask_path, "wb") as handle:
-                torch.save(roi_mask.cpu(), handle)
 
     def load_from_df(self, target, labels):
         boxes = []
@@ -124,25 +129,29 @@ class GeneralizedRCNN(nn.Module):
             sample_items = item.sample(num_of_sample)
             support_ann_ids += sample_items.ann_id.to_list()
             box_paths = sample_items.box_path.to_list()
-            mask_paths = sample_items.mask_path.to_list()
             roi_box_s = [torch.load(f).cuda() for f in box_paths]
-            roi_mask_s = [torch.load(f).cuda() for f in mask_paths]
-            if len(roi_box_s) > 0 and len(roi_mask_s):
+            if len(roi_box_s) > 0:
                 roi_box_s = torch.stack(roi_box_s).mean(0)
-                roi_mask_s = torch.stack(roi_mask_s).mean(0)
             else:
                 raise RuntimeError("Error: label {0} doesn't have support".format(i))
 
             boxes.append(roi_box_s)
-            masks.append(roi_mask_s)
 
         self.pair_df = self.pair_df.append(
             {"img_id": int(img_id.cpu()), "support_ann_ids": support_ann_ids},
             ignore_index=True)
 
         boxes = torch.stack(boxes)
-        masks = torch.stack(masks)
-        return boxes, masks
+        return boxes
+
+    def intersect1d(self, a, b):
+        label = np.intersect1d(a.cpu(), b.cpu())
+        label = np.random.choice(label)
+        return a == label, b==label
+        
+    # def extract_support_feature(idx_s)
+    #     idx_s = (idx_s > 0).nonzero().flatten()
+    #     idx_s = [torch.randperm(idx_s.size(0))[:1]]
 
     def forward(self, images, targets=None):
         """
@@ -159,36 +168,64 @@ class GeneralizedRCNN(nn.Module):
         """
         if self.training and targets is None:
             raise ValueError("In training mode, targets should be passed")
-        images = to_image_list(images)
-        features = self.backbone(images.tensors)
-        rois_box = self.pooler_box(features, targets)
-        rois_mask = self.pooler_mask(features, targets)
-        target_per_img = [len(p) for p in targets]
         labels = [p.get_field("labels").long() for p in targets]
         if self.training:
-            rois_box_q, rois_box_s = self.prepare_roi_list(
-                rois_box, target_per_img, labels)
-            rois_mask_q, rois_mask_s = self.prepare_roi_list(
-                rois_mask, target_per_img, labels)
+            idx_q, idx_s = self.intersect1d(labels[0], labels[1])
+            targets[0] = targets[0][idx_q]
+            targets[1] = targets[1][idx_s]
+            targets = [targets[0], targets[1]]
+            target_per_img = [len(p) for p in targets]
+            sampled_targets = [np.random.choice(
+                samples) for samples in target_per_img]
+            sampled_targets = [t[[s]] for t, s in zip(targets, sampled_targets)]
+        else:
+            sampled_targets = targets
+
+        support_images = self.support_pooler([images.tensors], sampled_targets)
+        support_features = self.backbone(support_images)
+        query_features = self.backbone(images.tensors)
+        support_features = support_features[0]
+        support_features = F.adaptive_avg_pool2d(support_features, 1)
+        if self.training:
+            support_features = support_features[[1, 0]]
+            features = [torch.cat([q, q - support_features], 1) for q in query_features]
+            features = [self.match(f) for f in features]
         else:
             if self.is_extract_feature:
-                self.save_features(rois_box, rois_mask, targets[0])
+                self.save_features(support_features, targets[0])
                 return
 
             if self.is_use_feature:
-                rois_box_s, rois_mask_s = self.load_from_df(targets[0], labels[0])
-                rois_box_q = None
-                rois_mask_q = None
+                support_features = self.load_from_df(targets[0], labels[0])
+                all_results = []
+                for support_features_per_class in support_features:
+                    support_features_per_class = support_features_per_class.unsqueeze(0)
+                    features = [torch.cat([q, q - support_features_per_class], 1) for q in query_features]
+                    features = [self.match(f) for f in features]
+                    # all_features.append(temp)
 
-        unique_labels = [torch.unique(l) for l in labels]
-        meta_data = {"roi_box": (rois_box_q, rois_box_s),
-                     "roi_mask": (rois_mask_q, rois_mask_s),
-                     "unique_labels": unique_labels
-                     }
+                # for features in all_features:
+                    proposals, proposal_losses = self.rpn(images, features, targets)
+                    # all_proposals.append(proposals)
+                    x, result, detector_losses = self.roi_heads(features, proposals, targets)
+                    all_results.append(result[0])
+                unique_labels = torch.unique(labels[0])
+                unique_labels = torch.cat([l.repeat(len(r)) for l, r in zip(unique_labels, all_results)])
+                all_results = cat_boxlist(all_results)
+                all_results.add_field("labels", unique_labels)
+                cls_scores = all_results.get_field("scores")
+                number_of_detections = len(all_results)
+                image_thresh, _ = torch.kthvalue(
+                    cls_scores.cpu(), number_of_detections - self.detections_per_img + 1
+                )
+                keep = cls_scores >= image_thresh.item()
+                keep = torch.nonzero(keep).squeeze(1)
+                all_results = all_results[keep]
+                return [all_results]
+
         proposals, proposal_losses = self.rpn(images, features, targets)
         if self.roi_heads:
-            x, result, detector_losses = self.roi_heads(
-                features, proposals, targets, meta_data)
+            x, result, detector_losses = self.roi_heads(features, proposals, targets)
         else:
             # RPN-only models don't have roi_heads
             x = features

@@ -36,19 +36,12 @@ class ROIBoxHead(torch.nn.Module):
             losses (dict[Tensor]): During training, returns the losses for the
                 head. During testing, returns an empty dict.
         """
-
         if self.training:
             # Faster R-CNN subsamples during training the proposals with a fixed
             # positive / negative ratio
             with torch.no_grad():
                 proposals = self.loss_evaluator.subsample(proposals, targets)
-                unique_label_q, unique_label_s = meta_data["unique_labels"]
-                labels_q, labels_s = [p.get_field("labels") for p in proposals]
-                proto_labels_q = get_encode_label(labels_q.long(), unique_label_s)
-                proto_labels_s = get_encode_label(labels_s.long(), unique_label_q)
-                proposals[0].add_field("proto_labels", proto_labels_q)
-                proposals[1].add_field("proto_labels", proto_labels_s)
-
+ 
         # extract features that will be fed to the final classifier. The
         # feature_extractor generally corresponds to the pooler + heads
         x = self.feature_extractor(features, proposals, meta_data)
@@ -56,8 +49,7 @@ class ROIBoxHead(torch.nn.Module):
         class_logits, box_regression = self.predictor(x)
 
         if not self.training:
-            unique_labels = meta_data['unique_labels'][0]
-            result = self.post_processor((class_logits, box_regression), proposals, unique_labels)
+            result = self.post_processor((class_logits, box_regression), proposals)
             return x, result, {}
 
         loss_classifier, loss_box_reg = self.loss_evaluator(

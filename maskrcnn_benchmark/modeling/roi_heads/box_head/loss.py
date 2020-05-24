@@ -139,7 +139,7 @@ class FastRCNNLossComputation(object):
         proposals = self._proposals
 
         # labels = cat([proposal.get_field("labels") for proposal in proposals], dim=0)
-        labels = cat([p.get_field("proto_labels") for p in proposals])
+        labels = cat([p.get_field("labels") for p in proposals])
         labels = (labels > 0).long()
         regression_targets = cat(
             [proposal.get_field("regression_targets") for proposal in proposals], dim=0

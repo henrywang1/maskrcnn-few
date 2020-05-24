@@ -42,7 +42,7 @@ class PostProcessor(nn.Module):
         self.cls_agnostic_bbox_reg = cls_agnostic_bbox_reg
         self.bbox_aug_enabled = bbox_aug_enabled
 
-    def forward(self, x, boxes, unique_labels):
+    def forward(self, x, boxes):
         """
         Arguments:
             x (tuple[tensor, tensor]): x contains the class logits
@@ -54,25 +54,35 @@ class PostProcessor(nn.Module):
             results (list[BoxList]): one BoxList for each image, containing
                 the extra fields labels and scores
         """
-        class_logit, box_regression = x
-        class_prob = F.softmax(class_logit, 1)
-        class_prob = class_prob[:, 1]
-        box_regression = box_regression[:, 4:8]
-        num_classes = len(unique_labels)
+        class_logits, box_regression = x
+        class_prob = F.softmax(class_logits, -1)
+
         # TODO think about a representation of batch of boxes
         image_shapes = [box.size for box in boxes]
-        boxes_per_image = [num_classes*len(box) for box in boxes]
+        boxes_per_image = [len(box) for box in boxes]
         concat_boxes = torch.cat([a.bbox for a in boxes], dim=0)
-        concat_boxes = concat_boxes.repeat(num_classes, 1)
-        proposals = self.box_coder.decode(box_regression.view(sum(boxes_per_image), -1), concat_boxes)
-        
+
+        if self.cls_agnostic_bbox_reg:
+            box_regression = box_regression[:, -4:]
+        proposals = self.box_coder.decode(
+            box_regression.view(sum(boxes_per_image), -1), concat_boxes
+        )
+        if self.cls_agnostic_bbox_reg:
+            proposals = proposals.repeat(1, class_prob.shape[1])
+
+        num_classes = class_prob.shape[1]
+
         proposals = proposals.split(boxes_per_image, dim=0)
-        class_prob = (class_prob, )
+        class_prob = class_prob.split(boxes_per_image, dim=0)
+
         results = []
-        for boxes_per_img, image_shape, prob in zip(proposals, image_shapes, class_prob):
+        for prob, boxes_per_img, image_shape in zip(
+            class_prob, proposals, image_shapes
+        ):
             boxlist = self.prepare_boxlist(boxes_per_img, prob, image_shape)
             boxlist = boxlist.clip_to_image(remove_empty=False)
-            boxlist = self.filter_results(boxlist, num_classes, unique_labels)
+            if not self.bbox_aug_enabled:  # If bbox aug is enabled, we will do it later
+                boxlist = self.filter_results(boxlist, num_classes)
             results.append(boxlist)
         return results
 
@@ -89,46 +99,38 @@ class PostProcessor(nn.Module):
         dataset (including the background class). `scores[i, j]`` corresponds to the
         box at `boxes[i, j * 4:(j + 1) * 4]`.
         """
-        # boxes = boxes.reshape(-1, 4)
-        # scores = scores.reshape(-1)
+        boxes = boxes.reshape(-1, 4)
+        scores = scores.reshape(-1)
         boxlist = BoxList(boxes, image_shape, mode="xyxy")
         boxlist.add_field("scores", scores)
         return boxlist
 
-    def filter_results(self, boxlist, num_classes, unique_labels):
+    def filter_results(self, boxlist, num_classes):
         """Returns bounding-box detection results by thresholding on scores and
         applying non-maximum suppression (NMS).
         """
         # unwrap the boxlist to avoid additional overhead.
         # if we had multi-class NMS, we could perform this directly on the boxlist
-        boxes = boxlist.bbox#.reshape(-1, num_classes * 4)
-        scores = boxlist.get_field("scores")#.reshape(-1, num_classes)
+        boxes = boxlist.bbox.reshape(-1, num_classes * 4)
+        scores = boxlist.get_field("scores").reshape(-1, num_classes)
+
+        device = scores.device
         result = []
         # Apply threshold on detection probabilities and apply NMS
         # Skip j = 0, because it's the background class
-        # inds_all = scores > self.score_thresh
-        k = scores.numel() // len(unique_labels)
-        for j in range(0, num_classes):
-            score_thresh = self.score_thresh
-            scores_j = scores[j * k:(j + 1) * k]
-            boxes_j = boxes[j * k:(j + 1) * k]
-            inds = scores_j > (score_thresh)
-            scores_j = scores_j[inds]
-            boxes_j = boxes_j[inds]
+        inds_all = scores > self.score_thresh
+        for j in range(1, num_classes):
+            inds = inds_all[:, j].nonzero().squeeze(1)
+            scores_j = scores[inds, j]
+            boxes_j = boxes[inds, j * 4 : (j + 1) * 4]
             boxlist_for_class = BoxList(boxes_j, boxlist.size, mode="xyxy")
             boxlist_for_class.add_field("scores", scores_j)
-            if scores_j.numel():
-                box_len = len(boxlist_for_class)
-                labels = unique_labels[j].repeat(box_len)
-                proto_idx = (torch.zeros(box_len) + (j + 1)).long().cuda()
-            else:  # assign empty tensor
-                labels = scores_j.long()
-                proto_idx = scores_j.long()
-
-            boxlist_for_class.add_field("labels", labels)
-            boxlist_for_class.add_field("proto_labels", proto_idx)
             boxlist_for_class = boxlist_nms(
-                boxlist_for_class, self.nms, score_field="scores"
+                boxlist_for_class, self.nms
+            )
+            num_labels = len(boxlist_for_class)
+            boxlist_for_class.add_field(
+                "labels", torch.full((num_labels,), j, dtype=torch.int64, device=device)
             )
             result.append(boxlist_for_class)
 

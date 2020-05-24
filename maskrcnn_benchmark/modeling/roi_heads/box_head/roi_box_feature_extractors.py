@@ -71,36 +71,11 @@ class FPN2MLPFeatureExtractor(nn.Module):
         self.fc7 = make_fc(representation_size, representation_size, use_gn)
         self.out_channels = representation_size
 
-    def forward(self, x, proposals, meta_data):
+    def forward(self, x, proposals, meta_data=None):
         x = self.pooler(x, proposals)
-        roi_q, roi_s = meta_data["roi_box"]
-        if self.training:
-            roi_q = F.adaptive_avg_pool2d(roi_q, 1) if roi_q.numel() else roi_q
-            roi_s = F.adaptive_avg_pool2d(roi_s, 1) if roi_s.numel() else roi_s
-            unique_label_q, unique_label_s = meta_data["unique_labels"]
-            proto_labels_q, proto_labels_s = [p.get_field("proto_labels") for p in proposals]
-            proto_labels_q = proto_labels_q.clone()
-            proto_labels_s = proto_labels_s.clone()
-            proto_labels_q = self.update_labels(proto_labels_q, unique_label_s)
-            proto_labels_s = self.update_labels(proto_labels_s, unique_label_q)
-            roi_s = roi_s[proto_labels_q]
-            roi_q = roi_q[proto_labels_s]
-            roi = torch.cat([roi_s, roi_q])
-            x = x*roi
-        else:
-            roi_s = F.adaptive_avg_pool2d(roi_s, 1) if roi_s.numel() else roi_s
-            N = x.shape[0]
-            b, c, h, w = roi_s.shape
-            # ToDo could we use expand?
-            x = x.repeat(b, 1, 1, 1)
-            roi_s = roi_s.unsqueeze(1).repeat(1, N, 1, 1, 1).view(-1, 256, h, w)
-            x = x*roi_s
-
         x = x.view(x.size(0), -1)
-
         x = F.relu(self.fc6(x))
         x = F.relu(self.fc7(x))
-
         return x
 
     def update_labels(self, proto_labels_q, unique_label_s):
