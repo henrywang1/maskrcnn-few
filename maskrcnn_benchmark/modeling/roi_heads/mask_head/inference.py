@@ -41,6 +41,7 @@ class MaskPostProcessor(nn.Module):
         num_masks = x.shape[0]
         labels = [bbox.get_field("labels") for bbox in boxes]
         labels = torch.cat(labels)
+        labels = (labels > 0).long()
         index = torch.arange(num_masks, device=labels.device)
         mask_prob = mask_prob[index, labels][:, None]
 
@@ -77,7 +78,7 @@ class MaskPostProcessorCOCOFormat(MaskPostProcessor):
             masks = result.get_field("mask").cpu()
             rles = [
                 mask_util.encode(np.array(mask[0, :, :, np.newaxis], order="F"))[0]
-                for mask in masks
+            for mask in masks
             ]
             for rle in rles:
                 rle["counts"] = rle["counts"].decode("utf-8")
@@ -145,9 +146,9 @@ def paste_mask_in_image(mask, box, im_h, im_w, thresh=0.5, padding=1):
     else:
         # for visualization and debugging, we also
         # allow it to return an unmodified mask
-        mask = (mask * 255).to(torch.bool)
+        mask = (mask * 255).to(torch.uint8)
 
-    im_mask = torch.zeros((im_h, im_w), dtype=torch.bool)
+    im_mask = torch.zeros((im_h, im_w), dtype=torch.uint8)
     x_0 = max(box[0], 0)
     x_1 = min(box[2] + 1, im_w)
     y_0 = max(box[1], 0)
@@ -197,7 +198,6 @@ class Masker(object):
             result = self.forward_single_image(mask, box)
             results.append(result)
         return results
-
 
 def make_roi_mask_post_processor(cfg):
     if cfg.MODEL.ROI_MASK_HEAD.POSTPROCESS_MASKS:

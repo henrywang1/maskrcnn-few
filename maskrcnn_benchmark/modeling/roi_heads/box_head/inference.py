@@ -42,7 +42,7 @@ class PostProcessor(nn.Module):
         self.cls_agnostic_bbox_reg = cls_agnostic_bbox_reg
         self.bbox_aug_enabled = bbox_aug_enabled
 
-    def forward(self, x, boxes):
+    def forward(self, x, boxes, targets=None):
         """
         Arguments:
             x (tuple[tensor, tensor]): x contains the class logits
@@ -76,15 +76,28 @@ class PostProcessor(nn.Module):
         class_prob = class_prob.split(boxes_per_image, dim=0)
 
         results = []
-        for prob, boxes_per_img, image_shape in zip(
-            class_prob, proposals, image_shapes
-        ):
-            boxlist = self.prepare_boxlist(boxes_per_img, prob, image_shape)
+        dist = boxes[0].get_field("dist")
+        dist = dist.permute(1, 0)
+        unique_labels = torch.unique(targets[0].get_field("labels"))
+        for d, u in zip(dist, unique_labels):
+            boxlist = self.prepare_boxlist(proposals[0], (1/d)/sum(1/d), image_shapes[0])
             boxlist = boxlist.clip_to_image(remove_empty=False)
-            if not self.bbox_aug_enabled:  # If bbox aug is enabled, we will do it later
-                boxlist = self.filter_results(boxlist, num_classes)
+            boxlist = self.filter_results(boxlist, num_classes)
+            boxlist.add_field("labels", u.repeat(len(boxlist)))
             results.append(boxlist)
-        return results
+
+        results = cat_boxlist(results)
+        number_of_detections = len(results)
+        if number_of_detections > self.detections_per_img > 0:
+            cls_scores = results.get_field("scores")
+            image_thresh, _ = torch.kthvalue(
+                cls_scores.cpu(), number_of_detections - self.detections_per_img + 1
+            )
+            keep = cls_scores >= image_thresh.item()
+            keep = torch.nonzero(keep).squeeze(1)
+            results = results[keep]
+
+        return [results]
 
     def prepare_boxlist(self, boxes, scores, image_shape):
         """

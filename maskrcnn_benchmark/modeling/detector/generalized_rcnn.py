@@ -21,6 +21,23 @@ from maskrcnn_benchmark.modeling.poolers import Pooler
 from torch.nn import functional as F
 from maskrcnn_benchmark.structures.boxlist_ops import cat_boxlist
 
+def euclidean_dist(x, y):
+    '''
+    Compute euclidean distance between two tensors
+    '''
+    # x: N x D
+    # y: M x D
+    n = x.size(0)
+    m = y.size(0)
+    d = x.size(1)
+    if d != y.size(1):
+        raise Exception
+
+    x = x.unsqueeze(1).expand(n, m, d)
+    y = y.unsqueeze(0).expand(n, m, d)
+
+    return torch.pow(x - y, 2).sum(2)
+
 class GeneralizedRCNN(nn.Module):
     """
     Main class for Generalized R-CNN. Currently supports boxes and masks.
@@ -156,6 +173,13 @@ class GeneralizedRCNN(nn.Module):
     #     idx_s = (idx_s > 0).nonzero().flatten()
     #     idx_s = [torch.randperm(idx_s.size(0))[:1]]
 
+    def extract_feature(self, x):
+        extractor = self.roi_heads.box.feature_extractor
+        x = x.view(x.size(0), -1)
+        x = F.relu(extractor.fc6(x))
+        x = F.relu(extractor.fc7(x))
+        return x
+
     def forward(self, images, targets=None):
         """
         Arguments:
@@ -173,8 +197,25 @@ class GeneralizedRCNN(nn.Module):
             raise ValueError("In training mode, targets should be passed")
         images = to_image_list(images)
         features = self.backbone(images.tensors)
+        rois_box = self.pooler_box(features, targets)
+        
+        if not self.training:
+            if self.is_extract_feature:
+                self.save_features(rois_box, targets[0])
+                return
+            if self.is_use_feature:
+                labels = [p.get_field("labels").long() for p in targets]
+                rois_box_s = self.load_from_df(targets[0], labels[0])
+                unique_labels = torch.unique(labels[0])
         proposals, proposal_losses = self.rpn(images, features, targets)
         if self.roi_heads:
+            if not self.training and self.is_use_feature:
+                rois_box_s = self.extract_feature(rois_box_s)
+                rois_box_q = self.pooler_box(features, proposals)
+                rois_box_q = self.extract_feature(rois_box_q)
+                dist = euclidean_dist(rois_box_q, rois_box_s)
+                proposals[0].add_field("dist", dist)
+
             x, result, detector_losses = self.roi_heads(features, proposals, targets)
         else:
             # RPN-only models don't have roi_heads
