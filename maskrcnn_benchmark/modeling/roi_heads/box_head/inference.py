@@ -79,10 +79,14 @@ class PostProcessor(nn.Module):
         dist = boxes[0].get_field("dist")
         dist = dist.permute(1, 0)
         unique_labels = torch.unique(targets[0].get_field("labels"))
+        # num_classes = unique_labels.numel()
         for d, u in zip(dist, unique_labels):
-            boxlist = self.prepare_boxlist(proposals[0], (1/d)/sum(1/d), image_shapes[0])
+            score = (1/d)/sum(1/d)
+            class_prob[0][:, 1] = score
+            class_prob[0][:, 0] = 0 
+            boxlist = self.prepare_boxlist(proposals[0], class_prob[0], image_shapes[0])
             boxlist = boxlist.clip_to_image(remove_empty=False)
-            boxlist = self.filter_results(boxlist, num_classes)
+            boxlist = self.filter_results(boxlist, 2)
             boxlist.add_field("labels", u.repeat(len(boxlist)))
             results.append(boxlist)
 
