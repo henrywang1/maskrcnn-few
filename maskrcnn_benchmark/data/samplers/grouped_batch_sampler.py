@@ -138,9 +138,9 @@ class QuerySupportSampler(BatchSampler):
                 "torch.utils.data.Sampler, but got sampler={}".format(sampler)
             )
         self.sampler = sampler
-        if batch_size > 1:
-            raise NotImplementedError(
-                "Currently, only 1 query and 1 support on 1 GPU is supported")
+        # if batch_size > 1:
+        #     raise NotImplementedError(
+        #         "Currently, only 1 query and 1 support on 1 GPU is supported")
 
         self.batch_size = batch_size
         self.drop_uneven = drop_uneven        
@@ -161,7 +161,6 @@ class QuerySupportSampler(BatchSampler):
         if same_img_idx.sum() > 0:
             support_imgs[same_img_idx] = self.sample_support_images(
                 sampled_ids[same_img_idx])
-
         return support_imgs
 
 
@@ -169,11 +168,12 @@ class QuerySupportSampler(BatchSampler):
         # get the sampled indices from the sampler
         sampled_ids = torch.as_tensor(list(self.sampler))
         support_imgs = self.sample_support_images(sampled_ids)
-        batches = [[i,j] for i, j in zip(sampled_ids, support_imgs)]
+        batches = [[i, j] for i, j in zip(sampled_ids, support_imgs)]
+        batches = [batches[i] + batches[i+1] for i in range(len(batches)//2)]
         if self.drop_uneven:
             kept = []
             for batch in batches:
-                if len(batch) == self.batch_size:
+                if len(batch) == self.batch_size*2:
                     kept.append(batch)
             batches = kept
         return batches

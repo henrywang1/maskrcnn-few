@@ -173,24 +173,30 @@ class GeneralizedRCNN(nn.Module):
             raise ValueError("In training mode, targets should be passed")
         labels = [p.get_field("labels").long() for p in targets]
         if self.training:
-            idx_q, idx_s = self.intersect1d(labels[0], labels[1])
-            targets[0] = targets[0][idx_q]
-            targets[1] = targets[1][idx_s]
-            targets = [targets[0], targets[1]]
-            target_per_img = [len(p) for p in targets]
-            sampled_targets = [np.random.choice(
-                samples) for samples in target_per_img]
-            sampled_targets = [t[[s]] for t, s in zip(targets, sampled_targets)]
+            sampled_targets = []
+            for i in range(0, 4, 2):
+                idx_q, idx_s = self.intersect1d(labels[i], labels[i + 1])
+                targets[i] = targets[i][idx_q]
+                targets[i + 1] = targets[i + 1][idx_s]
+                sampled_id = np.random.choice(len(targets[i + 1]))
+                sampled_targets.append(targets[i + 1][[sampled_id]])
+            support_images = self.support_pooler(
+                [images.tensors[[1, 3]]], sampled_targets)
+            support_features = self.backbone(support_images)
+            query_features = self.backbone(images.tensors[[0, 2]])
+            support_features = support_features[0]
+            support_features = F.adaptive_avg_pool2d(support_features, 1)
+            targets = [targets[0], targets[2]]
+            images.image_sizes = [images.image_sizes[0], images.image_sizes[2]]
         else:
             sampled_targets = targets
 
-        support_images = self.support_pooler([images.tensors], sampled_targets)
-        support_features = self.backbone(support_images)
-        query_features = self.backbone(images.tensors)
-        support_features = support_features[0]
-        support_features = F.adaptive_avg_pool2d(support_features, 1)
+            support_images = self.support_pooler([images.tensors], sampled_targets)
+            support_features = self.backbone(support_images)
+            query_features = self.backbone(images.tensors)
+            support_features = support_features[0]
+            support_features = F.adaptive_avg_pool2d(support_features, 1)
         if self.training:
-            support_features = support_features[[1, 0]]
             features = [torch.cat([q, q - support_features], 1) for q in query_features]
             features = [self.match(f) for f in features]
         else:
