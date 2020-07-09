@@ -10,7 +10,8 @@ def mean_confidence_interval(data, confidence=0.95):
     n = len(a)
     m, se = np.mean(a), scipy.stats.sem(a)
     h = se * scipy.stats.t.ppf((1 + confidence) / 2., n-1)
-    return m, h
+    return round(m, 1), round(h, 1)
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -31,32 +32,39 @@ def main():
     ap = []
     ap50 = []
     ap75 = []
-    # apr = []
-    # apc = []
-    print(log_folder)
+    aps = []
+    apm = []
+    apl = []
+    # print(log_folder)
     for path in log_folder.glob("*.pth"):
         log = torch.load(path)
         # import pdb; pdb.set_trace()
         # box_results.append(log.results["bbox"]["AP"])
         if "segm" in log.results.keys():
-            ap.append(log.results["segm"]["AP"])
-            ap50.append(log.results["segm"]["AP50"])
-            ap75.append(log.results["segm"]["AP75"])
+            # import pdb; pdb.set_trace()
+            ap.append(log.results["segm"]["AP"]*100)
+            ap50.append(log.results["segm"]["AP50"]*100)
+            ap75.append(log.results["segm"]["AP75"]*100)
+            aps.append(log.results["segm"]["APs"]*100)
+            apm.append(log.results["segm"]["APm"]*100)
+            apl.append(log.results["segm"]["APl"]*100)
 
-            # if "APr" in log.results["segm"].keys():
-            #     apr.append(log.results["segm"]["APr"])
-            # if "APc" in log.results["segm"].keys():
-            #     apc.append(log.results["segm"]["APc"])
 
-
+    print("AP", mean_confidence_interval(ap))
+    print("AP50", mean_confidence_interval(ap50))
+    print("AP75", mean_confidence_interval(ap75))
+    print("APs", mean_confidence_interval(aps))
+    print("APm", mean_confidence_interval(apm))
+    print("APl", mean_confidence_interval(apl))
     # if box_results:
     #     print(mean_confidence_interval(box_results))
-    if ap:
-        print("AP", mean_confidence_interval(ap))
-    if ap50:
-        print("AP50", mean_confidence_interval(ap50))
-    if ap75:
-        print("AP75", mean_confidence_interval(ap75))
+    # if ap:
+    #     print("AP", mean_confidence_interval(ap))
+    # if ap50:
+    #     print(ap50)
+    #     print("AP50", mean_confidence_interval(ap50))
+    # if ap75:
+    #     print("AP75", mean_confidence_interval(ap75))
     # if apc:
     #     print(mean_confidence_interval(apc))
     # if apr:

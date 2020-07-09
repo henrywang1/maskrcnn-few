@@ -1,5 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 from collections import defaultdict
+import math
 import json
 import os
 import torch
@@ -39,6 +40,15 @@ def has_valid_annotation(anno):
         return True
     return False
 
+def expand_box(box, r):
+    x, y, w, h = box
+    x = x - w*(r-1)/2
+    y = y - h*(r-1)/2
+    w = w * r
+    h = h * r
+    x = 0 if x < 0 else x
+    y = 0 if y < 0 else y
+    return [x, y, w, h]
 
 class COCODataset(torchvision.datasets.coco.CocoDetection):
     def __init__(
@@ -49,7 +59,8 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         transforms=None,
         split=0,
         extract_feature=False,
-        load_mask=False
+        load_mask=False,
+        exp_ratio=0
     ):
         self.is_train = remove_images_without_annotations
         self.is_lvis = "lvis" in ann_file or False
@@ -107,6 +118,9 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         self.id_to_img_map = {k: v for k, v in enumerate(self.ids)}
         self.img_to_id_map = {v: k for k, v in enumerate(self.ids)}
         self._transforms = transforms
+        # area to length ratio
+        self.expand_ratio = math.sqrt(1 + exp_ratio / 100)
+
 
     def preprocess_lvis(self, ann_file, extract_feature):
         suffix = "_freq" if self.is_train else "_common_rare"
@@ -164,6 +178,9 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
             anno = [obj for obj in anno if obj["iscrowd"] == 0]
 
         boxes = [obj["bbox"] for obj in anno]
+        #print(boxes)
+        if not self.expand_ratio == 0:
+            boxes = [expand_box(box, self.expand_ratio) for box in boxes]
         boxes = torch.as_tensor(boxes).reshape(-1, 4)  # guard against no boxes
         target = BoxList(boxes, img.size, mode="xywh").convert("xyxy")
 
@@ -200,3 +217,19 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         img_id = self.id_to_img_map[index]
         img_data = self.coco.imgs[img_id]
         return img_data
+
+# test
+if __name__ == "__main__":
+    def test_expand_box(boxes, ratio):
+        new_boxes = [expand_box(box, math.sqrt(1 + ratio / 100))
+                     for box in boxes]
+        new_boxes = [[round(box[0], 2), round(box[1], 2), round(
+            box[2], 2), round(box[3], 2)] for box in new_boxes]
+        print(new_boxes)
+
+    boxes = [[0, 0, 100, 100], [100, 100, 200, 200]]
+    print(boxes)
+
+    test_expand_box(boxes, 21)
+    test_expand_box(boxes, -19)
+    test_expand_box(boxes, 0)

@@ -71,6 +71,8 @@ _C.DATASETS.TRAIN = ()
 # List of the dataset names for testing, as present in paths_catalog.py
 _C.DATASETS.TEST = ()
 _C.DATASETS.SPLIT = 0
+_C.DATASETS.EXP_RATIO = 0
+
 # -----------------------------------------------------------------------------
 # DataLoader
 # -----------------------------------------------------------------------------
@@ -241,8 +243,10 @@ _C.MODEL.ROI_MASK_HEAD.DILATION = 1
 # GN
 _C.MODEL.ROI_MASK_HEAD.USE_GN = False
 _C.MODEL.ROI_MASK_HEAD.USE_MIL_LOSS = True
+_C.MODEL.ROI_MASK_HEAD.USE_MIL_USE_AFF = True
 _C.MODEL.ROI_MASK_HEAD.USE_CORR = False
 _C.MODEL.ROI_MASK_HEAD.USE_MLP = False
+_C.MODEL.ROI_MASK_HEAD.USE_BOX_MASK = False
 
 _C.MODEL.ROI_KEYPOINT_HEAD = CN()
 _C.MODEL.ROI_KEYPOINT_HEAD.FEATURE_EXTRACTOR = "KeypointRCNNFeatureExtractor"
@@ -456,6 +460,7 @@ _C.TEST.EXTRACT_FEATURE = False
 _C.TEST.USE_FEATURE = False
 _C.TEST.SHOT = 1
 _C.TEST.WAY = 0
+_C.TEST.USE_BOX_MASK = False
 # ---------------------------------------------------------------------------- #
 # Misc options
 # ---------------------------------------------------------------------------- #
